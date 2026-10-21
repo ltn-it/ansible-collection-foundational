@@ -533,6 +533,22 @@ class CustodyTests(unittest.TestCase):
             with self.assertRaises(AnsibleActionFail):
                 cli.run([])
 
+    def test_native_cli_preserves_approved_desktop_authentication_session(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport os\nprint(os.getsid(0))\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            self.assertEqual(int(native.NativeCLI(cfg).run([])), os.getsid(0))
+
 
 if __name__ == "__main__":
     unittest.main()

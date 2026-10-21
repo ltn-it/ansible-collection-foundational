@@ -55,7 +55,8 @@ class NativeCLI:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=self.env,
-            start_new_session=True,
+            # Desktop authentication is scoped to the approved caller's session.
+            start_new_session=False,
         )
         output = bytearray()
         offset = 0
