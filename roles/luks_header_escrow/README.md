@@ -63,6 +63,13 @@ The `preflight` task entrypoint validates the same role interface plus
 controller path, ownership, and permission policy without contacting the
 managed host.
 
+The delegated controller stat uses the current Ansible interpreter, local
+connection, no privilege escalation, and Ansible's private `DEFAULT_LOCAL_TMP`.
+It does not inherit the source host's login, privilege or temporary-directory
+requirements. This also supports read-only execution environments whose login
+home is not writable. Source SSH and remote temporary-directory settings stay
+scoped to the managed host.
+
 The role captures and verifies an immutable header document; it does not restore
 a header, rotate LUKS keys, prune escrow, or replace the required independent
 backup and recovery procedure. Loss of the sole ciphertext or its Vault identity
