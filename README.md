@@ -141,6 +141,13 @@ The current collection compatibility baseline is `ansible-core` 2.18.0 or newer.
 
 ---
 
+### Native desktop Password item boundary
+
+The controller-only `onepassword_secret_item` action and its
+[native Python API](docs/onepassword-native-password-item.md) share the same
+metadata-only planner, internally generated passwords and signed one-time
+creation authority. The native API does not require Ansible on the desktop.
+
 ## Dependencies
 
 ### Hetzner dependencies
