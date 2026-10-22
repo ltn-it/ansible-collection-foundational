@@ -60,6 +60,8 @@ For `*_onepassword_enabled: true`, select `*_onepassword_transport`, set
 
 The final Document title appends the package SHA256. Existing Documents must
 match title, category, tags, pinned revision when supplied, and every byte.
+Document discovery and revision checks use uncached detailed metadata before
+and after each download; cached revisions cannot satisfy independent readback.
 An initial creation requires `*_approval` and `*_approval_authority`: the
 existing independent Ed25519 signature/replay contract, with operation
 `create-onepassword-header-document`, target=source subject, and binding equal

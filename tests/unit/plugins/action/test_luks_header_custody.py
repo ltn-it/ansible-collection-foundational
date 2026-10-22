@@ -197,6 +197,40 @@ class CustodyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native.onepassword_read_custody(cli, config(), pins)
 
+    def test_native_document_revision_change_cannot_hide_behind_cached_metadata(self):
+        p, cfg = package(), config()
+        raw = custody.validate_package(p)
+        pins = {
+            "package_sha256": custody.digest(raw),
+            **{
+                key: p["manifest"][key]
+                for key in ("subject", "source_machine_id", "luks_uuid")
+            },
+        }
+
+        class CachedRevisionNative(FakeNative):
+            def run(self, argv, payload=b"", limit=1024 * 1024):
+                result = super().run(argv, payload, limit)
+                if argv[:2] == ["document", "get"]:
+                    self.version = 2
+                return result
+
+            def metadata(self, argv):
+                rows = super().metadata(argv)
+                if argv[:2] == ["item", "list"] and "--cache=false" not in argv:
+                    return [{**row, "version": 1} for row in rows]
+                return rows
+
+        for operation in ("verify", "independent_read"):
+            cli = CachedRevisionNative(cfg, raw)
+            cli.exists = True
+            pinned = dict(cfg, item_id=cli.id, item_version=1)
+            with self.subTest(operation=operation), self.assertRaises(ValueError):
+                if operation == "verify":
+                    native.onepassword_custody(cli, pinned, p)
+                else:
+                    native.onepassword_read_custody(cli, pinned, pins)
+
     def test_authenticated_package_export_and_password_free_import(self):
         fixture = reader_tests.HeaderReaderTests()
         fixture.setUp()

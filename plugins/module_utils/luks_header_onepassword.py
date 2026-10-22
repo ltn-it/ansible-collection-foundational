@@ -207,7 +207,17 @@ def inspect(cli, config, sha):
     if vault.get("id") != config["vault_id"]:
         raise ValueError("Native vault identity drift.")
     rows = cli.metadata(
-        ["item", "list", "--vault", config["vault_id"], *account, "--format", "json"]
+        [
+            "item",
+            "list",
+            "--cache=false",
+            "--long",
+            "--vault",
+            config["vault_id"],
+            *account,
+            "--format",
+            "json",
+        ]
     )
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("Invalid native item metadata.")
