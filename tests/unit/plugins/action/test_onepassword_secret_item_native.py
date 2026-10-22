@@ -47,6 +47,7 @@ c = CONFIG
 a = sys.argv[1:]
 with open(c['calls'], 'a') as f:
     f.write(json.dumps(a) + '\\n')
+assert os.environ.get('OP_BIOMETRIC_UNLOCK_ENABLED') == 'true'
 assert not any(k.startswith('OP_SESSION_') or k in ('OP_SERVICE_ACCOUNT_TOKEN', 'OP_CONNECT_TOKEN', 'OP_CONNECT_HOST') for k in os.environ)
 if a == ['--version']:
     print('2.38.1')

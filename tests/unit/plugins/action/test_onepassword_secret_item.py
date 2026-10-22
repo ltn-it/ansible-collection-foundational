@@ -255,3 +255,13 @@ def test_operator_user_uuid_must_be_allowlisted():
     )
     with pytest.raises(AnsibleActionFail):
         plugin._OnePasswordSecretItemStore(client).inspect(config)
+
+
+@pytest.mark.parametrize("inherited", [None, "false", "true", "unexpected"])
+def test_desktop_backend_is_explicit_and_cannot_be_disabled_by_inheritance(inherited):
+    environment = {"HOME": "/tmp/home", "UNRELATED": "not-admitted"}
+    if inherited is not None:
+        environment["OP_BIOMETRIC_UNLOCK_ENABLED"] = inherited
+    assert plugin._OnePasswordCLI._minimal_environment(environment) == {
+        "HOME": "/tmp/home", "OP_BIOMETRIC_UNLOCK_ENABLED": "true"
+    }

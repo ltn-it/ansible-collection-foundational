@@ -309,6 +309,8 @@ class _OnePasswordCLI:
             for name in ("HOME", "PATH", "TMPDIR", "LANG", "LC_ALL")
             if process_environment.get(name)
         }
+        # Select the admitted backend; never inherit a manual/session mode toggle.
+        environment["OP_BIOMETRIC_UNLOCK_ENABLED"] = "true"
         if not environment.get("HOME"):
             _fail("HOME is required for the 1Password desktop CLI integration.")
         return environment

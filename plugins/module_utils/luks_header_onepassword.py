@@ -42,6 +42,8 @@ class NativeCLI:
             for key in ("HOME", "PATH", "TMPDIR", "LANG", "LC_ALL")
             if os.environ.get(key)
         }
+        # This client admits desktop integration only, regardless of inherited CLI mode.
+        self.env["OP_BIOMETRIC_UNLOCK_ENABLED"] = "true"
         if not self.env.get("HOME"):
             raise ValueError("Native desktop HOME is required.")
 

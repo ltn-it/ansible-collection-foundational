@@ -570,5 +570,29 @@ class CustodyTests(unittest.TestCase):
             self.assertEqual(int(native.NativeCLI(cfg).run([])), os.getsid(0))
 
 
+    def test_native_cli_forces_desktop_mode_in_the_actual_child(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport os\nprint(os.environ['OP_BIOMETRIC_UNLOCK_ENABLED'])\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(cli_path=str(binary), cli_sha256=custody.digest(binary.read_bytes()),
+                       executor_uid=os.geteuid(), executor_node=platform.node())
+            for inherited in ("false", "true", "unexpected"):
+                with patch.dict(os.environ, {"OP_BIOMETRIC_UNLOCK_ENABLED": inherited}):
+                    cli = native.NativeCLI(cfg)
+                    self.assertEqual(cli.run([]).strip(), b"true")
+                    self.assertNotIn("UNRELATED", cli.env)
+                    from plugins.module_utils import onepassword_secret_item as creator
+                    client = creator._OnePasswordCLI(
+                        str(binary), custody.digest(binary.read_bytes()), cfg["account_id"]
+                    )
+                    self.assertEqual(client._run([], "synthetic backend selection").strip(), b"true")
+                    self.assertEqual(set(client.environment) - {"HOME", "PATH", "TMPDIR", "LANG", "LC_ALL"},
+                                     {"OP_BIOMETRIC_UNLOCK_ENABLED"})
+
+
 if __name__ == "__main__":
     unittest.main()

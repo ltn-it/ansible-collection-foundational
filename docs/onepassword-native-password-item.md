@@ -41,3 +41,8 @@ imports, a synthetic attested CLI and ephemeral signed approval. It verifies
 metadata planning, generation-output suppression, pin readback, cache bypass,
 single-use replay rejection and missing-approval rejection. It is not a live
 1Password custody or disaster-recovery acceptance.
+
+The native client sets `OP_BIOMETRIC_UNLOCK_ENABLED=true` in its minimal child
+environment. An inherited setting cannot disable the required desktop backend.
+This selects the existing app integration; it does not change app settings,
+authorize a prompt, export a session token or retry a failed operation.
