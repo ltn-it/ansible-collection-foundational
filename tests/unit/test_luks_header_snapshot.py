@@ -71,12 +71,19 @@ else:raise SystemExit(8)
         metadata = snapshot(**self.options)
         self.assertEqual(set(metadata), {"luks_uuid", "raw_size_bytes", "raw_sha256", "scratch_removed"})
         self.no_raw_scratch()
-        payload = snapshot(**self.options, include_payload=True)
+        payload = snapshot(**self.options, include_payload=True, expected_sha256=metadata["raw_sha256"])
         raw = base64.b64decode(payload.pop("luks_header_b64"), validate=True)
         self.assertEqual(payload, metadata)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), metadata["raw_sha256"])
         self.assertEqual(len(raw), metadata["raw_size_bytes"])
         self.assertEqual(hashlib.sha256(self.device.read_bytes()).hexdigest(), before)
+        self.no_raw_scratch()
+
+    def test_changed_planned_hash_is_rejected_before_payload_return_and_cleaned(self):
+        binary, marker = self.fake_cli("valid")
+        with self.assertRaisesRegex(ValueError, "revision changed before payload transfer"):
+            snapshot(**self.options, cryptsetup_path=binary, include_payload=True, expected_sha256="e" * 64)
+        self.assertTrue(marker.exists())
         self.no_raw_scratch()
 
     def test_wrong_machine_is_rejected_before_snapshot_commands(self):

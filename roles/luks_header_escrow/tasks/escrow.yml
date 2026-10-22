@@ -5,6 +5,7 @@
       lit.foundational.luks_header_snapshot:
         device: "{{ _luks_header_escrow_device }}"
         expected_uuid: "{{ _luks_header_escrow_uuid.stdout | trim }}"
+        expected_sha256: "{{ luks_header_escrow_expected_header_sha256 }}"
         expected_machine_id: "{{ luks_header_escrow_expected_machine_id }}"
         machine_id_path: "{{ luks_header_escrow_machine_id_path }}"
         temporary_root: "{{ luks_header_escrow_remote_temporary_root }}"

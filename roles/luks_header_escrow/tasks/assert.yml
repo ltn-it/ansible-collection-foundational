@@ -21,6 +21,10 @@
       - luks_header_escrow_subject | trim | length > 0
       - luks_header_escrow_expected_uuid is string
       - luks_header_escrow_expected_uuid == '' or luks_header_escrow_expected_uuid | length == 36
+      - luks_header_escrow_expected_header_sha256 is string
+      - >-
+        luks_header_escrow_expected_header_sha256 == ''
+        or luks_header_escrow_expected_header_sha256 is match('^[0-9a-f]{64}$')
       - luks_header_escrow_expected_machine_id is string
       - >-
         luks_header_escrow_expected_machine_id == ''

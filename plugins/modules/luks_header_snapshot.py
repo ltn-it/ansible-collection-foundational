@@ -27,6 +27,10 @@ options:
     type: str
     required: true
     description: Exact canonical LUKS UUID checked before and after capture.
+  expected_sha256:
+    type: str
+    default: ""
+    description: Optional exact planned header digest, checked before any payload transfer.
   temporary_root:
     type: path
     default: /run
@@ -97,6 +101,7 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             device=dict(type="path", required=True), expected_uuid=dict(type="str", required=True),
+            expected_sha256=dict(type="str", default=""),
             temporary_root=dict(type="path", default="/run"), include_payload=dict(type="bool", default=False),
             allow_regular_file_device=dict(type="bool", default=False), max_raw_bytes=dict(type="int", default=20971520),
             cryptsetup_path=dict(type="path", default="/usr/sbin/cryptsetup"), timeout_seconds=dict(type="int", default=30),

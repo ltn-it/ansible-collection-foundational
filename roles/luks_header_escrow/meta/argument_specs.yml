@@ -15,6 +15,10 @@ argument_specs:
         type: int
         default: 30
         description: Bounded managed-side cryptsetup command timeout, from 1 to 60 seconds.
+      luks_header_escrow_expected_header_sha256:
+        type: str
+        default: ""
+        description: Optional planned raw digest checked before payload transfer or encryption.
       luks_header_escrow_expected_machine_id:
         type: str
         default: ""

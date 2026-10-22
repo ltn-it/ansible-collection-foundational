@@ -59,7 +59,7 @@ def _ancestry(path):
 def snapshot(device, expected_uuid, temporary_root="/run", include_payload=False,
              allow_regular_file_device=False, max_raw_bytes=MAX_HEADER,
              cryptsetup_path="/usr/sbin/cryptsetup", timeout_seconds=30,
-             expected_machine_id="", machine_id_path="/etc/machine-id"):
+             expected_machine_id="", machine_id_path="/etc/machine-id", expected_sha256=""):
     """Return only revision metadata unless payload capture is explicitly requested."""
     if (
         type(include_payload) is not bool
@@ -69,6 +69,10 @@ def snapshot(device, expected_uuid, temporary_root="/run", include_payload=False
         or not isinstance(expected_uuid, str) or str(uuid.UUID(expected_uuid)) != expected_uuid
     ):
         raise ValueError("An exact bounded snapshot contract is required.")
+    if not isinstance(expected_sha256, str) or (
+        expected_sha256 and not re.fullmatch("[0-9a-f]{64}", expected_sha256)
+    ):
+        raise ValueError("Invalid planned header digest.")
     if not isinstance(expected_machine_id, str) or (
         expected_machine_id and not re.fullmatch("[0-9a-f]{32}", expected_machine_id)
     ):
@@ -139,6 +143,8 @@ def snapshot(device, expected_uuid, temporary_root="/run", include_payload=False
             stable = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_uid", "st_gid", "st_mode", "st_nlink")
             if any(getattr(before, key) != getattr(after, key) for key in stable) or read != before.st_size:
                 raise ValueError("Snapshot changed during inspection.")
+            if expected_sha256 and digest.hexdigest() != expected_sha256:
+                raise ValueError("The source header revision changed before payload transfer.")
             result = {"luks_uuid": expected_uuid, "raw_size_bytes": read, "raw_sha256": digest.hexdigest()}
             if payload is not None:
                 result["luks_header_b64"] = base64.b64encode(payload).decode("ascii")

@@ -86,7 +86,10 @@ The normal `main` entrypoint does not implicitly run this planning operation.
 `luks_header_escrow_timeout_seconds` defaults to 30 and must be 1–60 seconds per
 cryptsetup command. A revision is an observation, not a lock on future keyslot
 changes; the consuming capture must compare the actual raw hash again before
-publishing to an external provider.
+publishing to an external provider. For typed version-bound capture, set
+`luks_header_escrow_expected_header_sha256`: the managed snapshot rejects drift
+before returning raw payload or creating controller ciphertext. Existing generic
+callers default to an empty optional digest.
 
 The role captures and verifies an immutable header document; it does not restore
 a header, rotate LUKS keys, prune escrow, or replace the required independent
