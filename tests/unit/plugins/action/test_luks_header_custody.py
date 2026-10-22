@@ -304,6 +304,26 @@ class CustodyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.read("kv", "headers")
 
+    def test_vault_accepts_only_actual_empty_204_not_empty_200_or_204_body(self):
+        client = custody.VaultHTTP.__new__(custody.VaultHTTP)
+        client.url = "https://vault.fixture.invalid"
+        client.namespace = ""
+        client.token = "SYNTHETIC-fixture-token"
+        client.context = None
+        client.timeout = 10
+        with patch.object(custody.urllib.request, "build_opener") as build:
+            response = build.return_value.open.return_value.__enter__.return_value
+            response.status = 204
+            response.read.return_value = b""
+            self.assertEqual(client.request("POST", "auth/token/revoke-self"), {})
+            response.status = 200
+            with self.assertRaises(ValueError):
+                client.request("POST", "auth/token/revoke-self")
+            response.status = 204
+            response.read.return_value = b"{}"
+            with self.assertRaises(ValueError):
+                client.request("POST", "auth/token/revoke-self")
+
     def test_package_rejects_wrong_schema_payload_and_plaintext(self):
         for key, value in [
             ("schema_version", True),
