@@ -52,7 +52,12 @@ assert not any(k.startswith('OP_SESSION_') or k in ('OP_SERVICE_ACCOUNT_TOKEN', 
 if a == ['--version']:
     print('2.38.1')
 elif a[0] == 'whoami':
-    print(json.dumps({'account_uuid': c['account'], 'user_uuid': c['user'], 'url': 'https://example.1password.com'}))
+    raise SystemExit(1)
+elif a[:2] == ['account', 'list']:
+    print(json.dumps([{'account_uuid': c['account'], 'user_uuid': c['user'], 'url': 'example.1password.com'}]))
+elif a[:3] == ['user', 'get', '--me']:
+    assert a[3:] == ['--account', c['account'], '--format', 'json']
+    print(json.dumps({'id': c['user']}))
 elif a[:2] == ['vault', 'get']:
     print(json.dumps({'id': c['vault']}))
 elif a[:2] == ['item', 'list']:

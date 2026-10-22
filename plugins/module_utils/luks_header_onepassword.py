@@ -18,7 +18,9 @@ from .luks_header_custody import (
     validate_read_pins,
     verify_download,
 )
-from .onepassword_boundary import claim_approval, normalize_approval, trusted_executable
+from .onepassword_boundary import (
+    claim_approval, native_desktop_identity, normalize_approval, trusted_executable,
+)
 
 
 class NativeCLI:
@@ -111,6 +113,9 @@ class NativeCLI:
     def metadata(self, arguments):
         return json.loads(self.run(arguments))
 
+    def identity(self, account_id):
+        return native_desktop_identity(self.metadata, account_id)
+
     def metadata_create(self, arguments, payload):
         return json.loads(self.run(arguments, payload=payload))
 
@@ -193,7 +198,7 @@ def inspect(cli, config, sha):
     if cli.run(["--version"]).decode("ascii").strip() != config["cli_version"]:
         raise ValueError("Native 1Password CLI version drift.")
     account = ["--account", config["account_id"]]
-    identity = cli.metadata(["whoami", *account, "--format", "json"])
+    identity = native_desktop_identity(cli.metadata, config["account_id"])
     if (
         identity.get("account_uuid") != config["account_id"]
         or identity.get("user_uuid") not in config["authorized_user_uuids"]

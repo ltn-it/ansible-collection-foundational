@@ -46,3 +46,12 @@ The native client sets `OP_BIOMETRIC_UNLOCK_ENABLED=true` in its minimal child
 environment. An inherited setting cannot disable the required desktop backend.
 This selects the existing app integration; it does not change app settings,
 authorize a prompt, export a session token or retry a failed operation.
+
+Desktop identity verification selects exactly one registered account from
+`account list`, then authenticates `user get --me --account <account-id>`.
+The authenticated user must equal that account's configured user before the
+consumer checks its explicit operator allowlist and sign-in hostname. Only a
+bare hostname or HTTPS URL with an optional trailing slash is normalized;
+ambiguous accounts, malformed addresses and user drift fail before item reads.
+`whoami` alone is not used as the desktop authentication test. The Document
+transport and vault Co-Manager action share this same identity boundary.

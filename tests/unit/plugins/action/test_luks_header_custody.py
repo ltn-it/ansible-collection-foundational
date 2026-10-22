@@ -101,12 +101,11 @@ class FakeNative:
         raise AssertionError("unexpected command")
 
     def metadata(self, argv):
-        if argv[0] == "whoami":
-            return {
-                "account_uuid": self.account,
-                "user_uuid": self.user,
-                "url": "https://example.1password.com",
-            }
+        if argv[:2] == ["account", "list"]:
+            return [{"account_uuid": self.account, "user_uuid": self.user,
+                     "url": "example.1password.com"}]
+        if argv[:3] == ["user", "get", "--me"]:
+            return {"id": self.user}
         if argv[:2] == ["vault", "get"]:
             return {"id": self.cfg["vault_id"]}
         if argv[:2] == ["item", "list"]:
