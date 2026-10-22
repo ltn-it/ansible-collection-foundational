@@ -47,6 +47,9 @@
       - luks_header_escrow_remote_temporary_root is string
       - luks_header_escrow_remote_temporary_root is match('^/')
       - luks_header_escrow_allow_regular_file_device is boolean
+      - luks_header_escrow_timeout_seconds | type_debug == 'int'
+      - luks_header_escrow_timeout_seconds >= 1
+      - luks_header_escrow_timeout_seconds <= 60
       - not ansible_check_mode
     fail_msg: >-
       Enabled LUKS-header escrow requires schema version 1, a safe positive

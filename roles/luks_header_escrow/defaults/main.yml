@@ -1,5 +1,7 @@
 ---
 luks_header_escrow_enabled: false
+luks_header_escrow_revision_enabled: false
+luks_header_escrow_timeout_seconds: 30
 luks_header_escrow_schema_version: 1
 luks_header_escrow_max_raw_bytes: 20971520
 luks_header_escrow_path: ""
