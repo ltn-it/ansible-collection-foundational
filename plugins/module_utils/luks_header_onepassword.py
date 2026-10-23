@@ -19,7 +19,10 @@ from .luks_header_custody import (
     verify_download,
 )
 from .onepassword_boundary import (
-    claim_approval, native_desktop_identity, normalize_approval, trusted_executable,
+    claim_approval,
+    native_desktop_identity,
+    normalize_approval,
+    trusted_executable,
 )
 
 METADATA_TIMEOUT_SECONDS = 60
@@ -31,8 +34,10 @@ def _operation_timeout(arguments, payload_size, output_limit):
     """Keep metadata short while admitting bounded large encrypted transfers."""
     command = tuple(arguments[:2])
     if (
-        command == ("document", "create") and payload_size > LARGE_DOCUMENT_BYTES
-        or command == ("document", "get") and output_limit > LARGE_DOCUMENT_BYTES
+        command == ("document", "create")
+        and payload_size > LARGE_DOCUMENT_BYTES
+        or command == ("document", "get")
+        and output_limit > LARGE_DOCUMENT_BYTES
     ):
         return DOCUMENT_TRANSFER_TIMEOUT_SECONDS
     return METADATA_TIMEOUT_SECONDS
@@ -79,9 +84,7 @@ class NativeCLI:
         )
         output = bytearray()
         offset = 0
-        deadline = time.monotonic() + _operation_timeout(
-            arguments, len(payload), limit
-        )
+        deadline = time.monotonic() + _operation_timeout(arguments, len(payload), limit)
         try:
             with selectors.DefaultSelector() as selector:
                 os.set_blocking(process.stdout.fileno(), False)
@@ -309,6 +312,23 @@ def onepassword_read_custody(cli, config, pins):
     }
 
 
+def _created_document_id(result):
+    """Normalize item and Document CLI responses without accepting ambiguity."""
+    if not isinstance(result, dict):
+        raise ValueError("Native creation response must contain one exact item ID.")
+    identifiers = [result[key] for key in ("id", "uuid") if key in result]
+    if (
+        not identifiers
+        or any(
+            not isinstance(value, str) or not re.fullmatch(r"[a-z0-9]{26}", value)
+            for value in identifiers
+        )
+        or len(set(identifiers)) != 1
+    ):
+        raise ValueError("Native creation response must contain one exact item ID.")
+    return identifiers[0]
+
+
 def onepassword_custody(
     cli,
     config,
@@ -365,7 +385,7 @@ def onepassword_custody(
             raw,
         )
         current = inspect(cli, config, sha)
-        if current is None or result.get("id") != current["id"]:
+        if current is None or _created_document_id(result) != current["id"]:
             raise ValueError(
                 "Native creation outcome is not uniquely verified; inspect before retry."
             )

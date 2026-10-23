@@ -118,6 +118,8 @@ The current collection compatibility baseline is `ansible-core` 2.18.0 or newer.
   larger output bound have a finite 600-second transfer deadline. Metadata
   calls retain their 60-second deadline. Byte limits, desktop authentication,
   signed create-only approval and unknown-outcome reconciliation are unchanged.
+  Creation responses may identify the item with `id` or the Document command's
+  `uuid`; conflicting or invalid identifiers fail closed before acceptance.
 
 - `lit.foundational.terragrunt`
   Terragrunt wrapper that:
