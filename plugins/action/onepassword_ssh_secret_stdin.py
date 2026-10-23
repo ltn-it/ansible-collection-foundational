@@ -113,6 +113,12 @@ options:
   destination_host:
     type: str
     required: true
+  destination_address:
+    description:
+      - Optional canonical unicast IPv4 routing address, included in the signed contract when set.
+      - Retains the exact destination hostname as the SSH host-key alias; it cannot replace the subject or key pin.
+    type: str
+    default: ''
   destination_user:
     type: str
     default: root
@@ -248,6 +254,10 @@ destination:
   type: str
   returned: always
   description: Non-sensitive SSH destination identity.
+destination_address:
+  type: str
+  returned: when a literal routing address was requested
+  description: Exact signature-bound IPv4 routing address, with destination identity and host trust unchanged.
 operator_user_uuid:
   type: str
   returned: always

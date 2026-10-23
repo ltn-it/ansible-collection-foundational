@@ -116,6 +116,8 @@ def _approval(tmp_path, arguments, authority):
             "remote_command": arguments["remote_command"],
         },
     }
+    if arguments.get("destination_address"):
+        binding["destination"]["address"] = arguments["destination_address"]
     approval, _unused_replay, _unused_now = build_approval(
         tmp_path,
         authority,
@@ -199,8 +201,9 @@ def _write_valid_known_hosts(tmp_path):
     return path
 
 
+@pytest.mark.parametrize("destination_address", ["", "127.0.0.1", "192.0.2.42"])
 def test_consumer_keeps_secret_out_of_result_and_process_arguments(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, destination_address
 ):
     marker = tmp_path / "ssh-success"
     op_path = tmp_path / "op"
@@ -245,14 +248,17 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
                 "StrictHostKeyChecking=yes",
                 "UpdateHostKeys=no",
                 "VerifyHostKeyDNS=no",
-            },
+            } | (
+                {"Hostname=" + destination_address, "HostKeyAlias=" + SUBJECT}
+                if destination_address else set()
+            ),
             SECRET,
             str(marker),
         ),
     )
     agent_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     agent_socket.bind(str(tmp_path / "agent.sock"))
-    arguments = _arguments(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=destination_address)
     config = plugin._normalize_arguments(arguments)
     fake_client = SimpleNamespace(
         requested_binary=str(op_path),
@@ -287,16 +293,68 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
     assert result["changed"] is True
     assert result["operator_user_uuid"] == USER_UUID
     assert result["core_dumps_disabled"] is True
+    if destination_address:
+        assert result["destination_address"] == destination_address
+    else:
+        assert "destination_address" not in result
     assert marker.read_text(encoding="utf-8") == "ok"
     assert SECRET.decode("ascii") not in repr(result)
     assert len(list((tmp_path / "replay").glob("*.used"))) == 1
 
 
-def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch):
+def test_empty_route_preserves_the_original_signed_destination_binding(tmp_path):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path)
+    original = plugin._normalize_arguments(arguments)
+    explicit_empty = plugin._normalize_arguments(dict(arguments, destination_address=""))
+    assert plugin._approval_binding(original) == plugin._approval_binding(explicit_empty)
+    assert set(plugin._approval_binding(original)["destination"]) == {
+        "host", "user", "port", "host_fingerprint", "remote_command"
+    }
+
+
+@pytest.mark.parametrize("address", [
+    None, True, False, 123, [], {}, "localhost", "127.1", "127.000.0.1",
+    " 127.0.0.1", "127.0.0.1 ", "127.0.0.1\n", "::1", "0.0.0.0",
+    "224.0.0.1", "255.255.255.255", "127.0.0.1%en0", "127.0.0.1;echo", "*",
+])
+def test_invalid_routing_address_is_rejected_before_provider_use(tmp_path, monkeypatch, address):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=address)
+    monkeypatch.setattr(plugin, "_inspect_boundaries", lambda *args: pytest.fail("provider reached"))
+    with pytest.raises(AnsibleActionFail):
+        plugin.execute_native(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+@pytest.mark.parametrize("signed,modified", [
+    ("", "127.0.0.1"), ("127.0.0.1", "192.0.2.42"), ("127.0.0.1", ""),
+])
+def test_route_addition_replacement_and_removal_invalidate_signature(tmp_path, monkeypatch, signed, modified):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=signed)
+    arguments["destination_address"] = modified
+    monkeypatch.setattr(plugin, "_inspect_boundaries", lambda *args: pytest.fail("provider reached"))
+    with pytest.raises(AnsibleActionFail):
+        plugin.execute_native(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+def test_deleting_a_signed_route_cannot_downgrade_to_the_legacy_contract(tmp_path):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address="127.0.0.1")
+    del arguments["destination_address"]
+    with pytest.raises(AnsibleActionFail):
+        plugin._normalize_arguments(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+@pytest.mark.parametrize("destination_address", ["", "127.0.0.1"])
+def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch, destination_address):
     ssh_path = tmp_path / "ssh"
     _write_executable(ssh_path, "raise SystemExit(99)\n")
     _write_valid_known_hosts(tmp_path)
-    arguments = _arguments(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=destination_address)
     monkeypatch.setattr(
         plugin,
         "_inspect_boundaries",

@@ -51,6 +51,15 @@ must match the destination host, and the only command is
 `/bin/cryptroot-unlock`. The API exposes no arbitrary command, proxy option,
 private-key export, item edit, rotation or deletion.
 
+An optional `destination_address` selects one canonical unicast IPv4 routing
+address. When provided it is part of the signed destination binding. SSH uses
+that literal address while retaining `destination_host` as its exact host-key
+alias, with the same port and independently pinned Ed25519 key. The caller must
+separately admit any required private transport; the consumer creates no tunnel
+and forwards no Agent. Empty or omitted address preserves the original arguments,
+receipt and signed binding. Hostnames, IPv6, unspecified, multicast, broadcast
+and noncanonical address forms are rejected. Proxies remain disabled.
+
 Check mode validates the contract, metadata and public identities without
 claiming the approval, reading the password or starting SSH. Actual consumption
 claims the approval once, disables core dumps, reads the exact password through

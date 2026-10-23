@@ -3,6 +3,7 @@
 """Shared signed exact-item SSH secret-stdin boundary; no Ansible dependency."""
 
 import hashlib
+import ipaddress
 import os
 import re
 import resource
@@ -65,6 +66,7 @@ _EXPECTED_ARGS = frozenset(
         "known_hosts_path",
         "known_hosts_sha256",
         "destination_host",
+        "destination_address",
         "destination_user",
         "destination_port",
         "destination_host_fingerprint",
@@ -112,6 +114,21 @@ def _normalize_arguments(args):
         destination_host
     ):
         _fail("destination_host must be one exact host identity.")
+    destination_address = args.get("destination_address", "")
+    if not isinstance(destination_address, str):
+        _fail("destination_address must be empty or one canonical unicast IPv4 literal.")
+    if destination_address:
+        try:
+            address = ipaddress.IPv4Address(destination_address)
+        except ipaddress.AddressValueError:
+            _fail("destination_address must be empty or one canonical unicast IPv4 literal.")
+        if (
+            str(address) != destination_address
+            or address.is_unspecified
+            or address.is_multicast
+            or destination_address == "255.255.255.255"
+        ):
+            _fail("destination_address must be empty or one canonical unicast IPv4 literal.")
     if not isinstance(destination_user, str) or not _USER_PATTERN.fullmatch(
         destination_user
     ):
@@ -194,6 +211,7 @@ def _normalize_arguments(args):
         "known_hosts_path": args.get("known_hosts_path"),
         "known_hosts_sha256": known_hosts_sha256,
         "destination_host": destination_host,
+        "destination_address": destination_address,
         "destination_user": destination_user,
         "destination_port": destination_port,
         "destination_host_fingerprint": destination_host_fingerprint,
@@ -213,7 +231,7 @@ def _normalize_arguments(args):
 def _approval_binding(config):
     password = config["password"]
     ssh_key = config["ssh_key"]
-    return {
+    binding = {
         "onepassword": {
             "cli_path": password["cli_path"],
             "cli_sha256": password["cli_sha256"],
@@ -268,6 +286,10 @@ def _approval_binding(config):
             "remote_command": config["remote_command"],
         },
     }
+    # Preserve old signatures exactly when no routing address was requested.
+    if config.get("destination_address"):
+        binding["destination"]["address"] = config["destination_address"]
+    return binding
 
 
 def _read_known_hosts_identity(config):
@@ -605,6 +627,11 @@ def _run_ssh(config, known_host_line, public_identity, secret):
             "{0}@{1}".format(config["destination_user"], config["destination_host"]),
             config["remote_command"],
         ]
+        if config.get("destination_address"):
+            arguments[3:3] = [
+                "-o", "Hostname={0}".format(config["destination_address"]),
+                "-o", "HostKeyAlias={0}".format(config["destination_host"]),
+            ]
         try:
             consumer = subprocess.Popen(
                 arguments,
@@ -671,6 +698,8 @@ def _consume(config, check_mode=False):
             config["destination_port"],
         ),
     }
+    if config.get("destination_address"):
+        result["destination_address"] = config["destination_address"]
     if check_mode:
         return result
     claim_approval(config["approval"])
@@ -690,7 +719,7 @@ def _consume(config, check_mode=False):
 
 
 def execute_native(arguments, *, check_mode=False):
-    """Use the unchanged signed unlock contract from an attested native caller.
+    """Use the exact signed unlock contract from an attested native caller.
 
     The caller must verify the installed package and approved native executor.
     Check mode never claims approval, reads the secret or starts SSH. Apply

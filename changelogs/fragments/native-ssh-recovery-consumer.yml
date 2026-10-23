@@ -1,5 +1,7 @@
 ---
 minor_changes:
+  - Add a default-off signed literal IPv4 route for native recovery while retaining
+    the exact target hostname, Ed25519 host-key pin and disabled proxy/forwarding boundaries.
   - Share exact SSH Key metadata validation and signed SSH recovery stdin consumption between Ansible actions and
     attested native desktop callers without importing Ansible on the native caller.
   - Preserve existing item, executable, Agent, host-key, signature, replay,
