@@ -7,3 +7,5 @@ minor_changes:
 bugfixes:
   - Explicitly select native desktop biometric authentication for SSH Key metadata
     operations, matching the Password client.
+  - Accept multiword OpenSSH public-key comments from the native Agent without
+    changing fingerprint validation or the single-line, size and key-type boundaries.

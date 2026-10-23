@@ -35,6 +35,19 @@ FINGERPRINT = "SHA256:{0}".format(
 USER_UUID = "U" * 26
 
 
+@pytest.mark.parametrize("comment", ["", "recovery@test", "host01.example.test Dropbear SSH Recovery"])
+def test_public_identity_accepts_openssh_comment_words_without_changing_fingerprint(comment):
+    prefix = " ".join(PUBLIC_KEY.split()[:2])
+    public = prefix + (" " + comment if comment else "")
+    assert plugin._public_identity(public) == (public, FINGERPRINT)
+
+
+@pytest.mark.parametrize("suffix", ["\nsecond key", "\rsecond key", "\x00second key", "x" * 1024])
+def test_public_identity_keeps_multiline_nul_and_size_boundaries(suffix):
+    with pytest.raises(AnsibleActionFail):
+        plugin._public_identity(PUBLIC_KEY + suffix)
+
+
 @pytest.mark.parametrize("inherited", [None, "false", "true", "unexpected"])
 def test_desktop_backend_is_explicit_and_cannot_be_disabled_by_inheritance(inherited):
     environment = {"HOME": "/tmp/home", "UNRELATED": "not-admitted"}
@@ -262,13 +275,15 @@ def test_apply_signature_rejects_normalized_contract_mutation(tmp_path, field, v
         plugin._normalize_arguments(arguments)
 
 
-def test_agent_verification_requires_exact_socket_and_public_identity(tmp_path):
+@pytest.mark.parametrize("agent_comment", ["", "recovery@test", "host01.example.test Dropbear SSH Recovery"])
+def test_agent_verification_requires_exact_socket_and_public_identity(tmp_path, agent_comment):
     agent_socket_path = tmp_path / "agent.sock"
     agent_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     agent_socket.bind(str(agent_socket_path))
     ssh_add = tmp_path / "ssh-add"
+    agent_public_key = " ".join(PUBLIC_KEY.split()[:2]) + (" " + agent_comment if agent_comment else "")
     ssh_add.write_text(
-        "#!{0}\nprint({1!r})\n".format(sys.executable, PUBLIC_KEY),
+        "#!{0}\nprint({1!r})\n".format(sys.executable, agent_public_key),
         encoding="utf-8",
     )
     ssh_add.chmod(0o700)

@@ -451,7 +451,8 @@ def _public_identity(public_key):
         _fail("1Password returned an invalid SSH public key.")
     if "\r" in public_key or "\n" in public_key or "\x00" in public_key:
         _fail("1Password returned an invalid SSH public key.")
-    parts = public_key.split()
+    # OpenSSH comments may contain spaces; only the first two fields identify the key.
+    parts = public_key.split(maxsplit=2)
     if len(parts) not in (2, 3) or parts[0] != "ssh-ed25519":
         _fail("1Password did not return an Ed25519 OpenSSH public key.")
     try:
