@@ -154,6 +154,16 @@ The controller-only `onepassword_secret_item` action and its
 metadata-only planner, internally generated passwords and signed one-time
 creation authority. The native API does not require Ansible on the desktop.
 
+### Native desktop SSH recovery boundary
+
+The `onepassword_ssh_key_item` and `onepassword_ssh_secret_stdin` actions share
+their implementation with [native SSH APIs](docs/onepassword-native-ssh-recovery.md).
+An attested desktop caller can validate the exact SSH identity or consume the
+signed recovery contract with its approved native 1Password client and Agent.
+Ansible remains in the execution environment. The native APIs require no
+Ansible installation on the desktop and retain the existing target, signature,
+replay and stdin-only secret boundaries.
+
 ## Dependencies
 
 ### Hetzner dependencies

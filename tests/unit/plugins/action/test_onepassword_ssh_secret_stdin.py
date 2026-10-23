@@ -11,7 +11,7 @@ import pytest
 
 from ansible.errors import AnsibleActionFail
 
-from plugins.action import onepassword_ssh_secret_stdin as plugin
+from plugins.module_utils import onepassword_ssh_secret_stdin as plugin
 from tests.unit.plugins.action.onepassword_approval_support import (
     build_approval,
     build_authority,
@@ -252,7 +252,8 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
     )
     agent_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     agent_socket.bind(str(tmp_path / "agent.sock"))
-    config = plugin._normalize_arguments(_arguments(tmp_path))
+    arguments = _arguments(tmp_path)
+    config = plugin._normalize_arguments(arguments)
     fake_client = SimpleNamespace(
         requested_binary=str(op_path),
         binary=str(op_path),
@@ -278,7 +279,7 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
         lambda client, config, public_identity, operator: None,
     )
     try:
-        result = plugin._consume(config)
+        result = plugin.execute_native(arguments)
     finally:
         agent_socket.close()
 
@@ -295,7 +296,7 @@ def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch):
     ssh_path = tmp_path / "ssh"
     _write_executable(ssh_path, "raise SystemExit(99)\n")
     _write_valid_known_hosts(tmp_path)
-    config = plugin._normalize_arguments(_arguments(tmp_path))
+    arguments = _arguments(tmp_path)
     monkeypatch.setattr(
         plugin,
         "_inspect_boundaries",
@@ -311,7 +312,7 @@ def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch):
         lambda *unused: pytest.fail("check mode read a secret"),
     )
 
-    result = plugin._consume(config, check_mode=True)
+    result = plugin.execute_native(arguments, check_mode=True)
 
     assert result["unlocked"] is False
     assert result["changed"] is False

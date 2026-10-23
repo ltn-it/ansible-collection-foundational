@@ -8,7 +8,7 @@ import pytest
 
 from ansible.errors import AnsibleActionFail
 
-from plugins.action import onepassword_ssh_key_item as plugin
+from plugins.module_utils import onepassword_ssh_key_item as plugin
 from tests.unit.plugins.action.onepassword_approval_support import (
     build_approval,
     build_authority,
@@ -33,6 +33,16 @@ FINGERPRINT = "SHA256:{0}".format(
     base64.b64encode(hashlib.sha256(KEY_BLOB).digest()).decode("ascii").rstrip("=")
 )
 USER_UUID = "U" * 26
+
+
+@pytest.mark.parametrize("inherited", [None, "false", "true", "unexpected"])
+def test_desktop_backend_is_explicit_and_cannot_be_disabled_by_inheritance(inherited):
+    environment = {"HOME": "/tmp/home", "UNRELATED": "not-admitted"}
+    if inherited is not None:
+        environment["OP_BIOMETRIC_UNLOCK_ENABLED"] = inherited
+    assert plugin._OnePasswordCLI._minimal_environment(environment) == {
+        "HOME": "/tmp/home", "OP_BIOMETRIC_UNLOCK_ENABLED": "true"
+    }
 
 
 def _arguments(**overrides):

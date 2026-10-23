@@ -1,0 +1,9 @@
+---
+minor_changes:
+  - Share exact SSH Key metadata validation and signed SSH recovery stdin consumption between Ansible actions and
+    attested native desktop callers without importing Ansible on the native caller.
+  - Preserve existing item, executable, Agent, host-key, signature, replay,
+    secret-lifetime and fixed-command boundaries.
+bugfixes:
+  - Explicitly select native desktop biometric authentication for SSH Key metadata
+    operations, matching the Password client.
