@@ -22,6 +22,21 @@ from .onepassword_boundary import (
     claim_approval, native_desktop_identity, normalize_approval, trusted_executable,
 )
 
+METADATA_TIMEOUT_SECONDS = 60
+DOCUMENT_TRANSFER_TIMEOUT_SECONDS = 600
+LARGE_DOCUMENT_BYTES = 1024 * 1024
+
+
+def _operation_timeout(arguments, payload_size, output_limit):
+    """Keep metadata short while admitting bounded large encrypted transfers."""
+    command = tuple(arguments[:2])
+    if (
+        command == ("document", "create") and payload_size > LARGE_DOCUMENT_BYTES
+        or command == ("document", "get") and output_limit > LARGE_DOCUMENT_BYTES
+    ):
+        return DOCUMENT_TRANSFER_TIMEOUT_SECONDS
+    return METADATA_TIMEOUT_SECONDS
+
 
 class NativeCLI:
     def __init__(self, config):
@@ -64,7 +79,9 @@ class NativeCLI:
         )
         output = bytearray()
         offset = 0
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + _operation_timeout(
+            arguments, len(payload), limit
+        )
         try:
             with selectors.DefaultSelector() as selector:
                 os.set_blocking(process.stdout.fileno(), False)

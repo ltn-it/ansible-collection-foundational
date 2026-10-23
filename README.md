@@ -114,6 +114,10 @@ The current collection compatibility baseline is `ansible-core` 2.18.0 or newer.
   boundaries, and keeps the password-free credential phase separate from
   header decryption. It neither changes keyslots nor substitutes a provider
   checksum test for independent recovery acceptance.
+  Native Document uploads larger than 1 MiB and Document downloads with a
+  larger output bound have a finite 600-second transfer deadline. Metadata
+  calls retain their 60-second deadline. Byte limits, desktop authentication,
+  signed create-only approval and unknown-outcome reconciliation are unchanged.
 
 - `lit.foundational.terragrunt`
   Terragrunt wrapper that:

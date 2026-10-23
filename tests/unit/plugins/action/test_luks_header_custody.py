@@ -602,6 +602,78 @@ class CustodyTests(unittest.TestCase):
             )
             self.assertEqual(int(native.NativeCLI(cfg).run([])), os.getsid(0))
 
+    def test_large_document_transfers_can_complete_after_metadata_deadline(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport sys\n"
+                "sys.stdin.buffer.read()\nprint('ciphertext-received')\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            cli = native.NativeCLI(cfg)
+            cases = [
+                (["document", "create", "-"], b"x" * (1024 * 1024 + 1), 1024),
+                (["document", "get", "fixture"], b"", custody.MAX_PACKAGE),
+            ]
+            for arguments, payload, limit in cases:
+                # An actual subprocess must finish across the old 60s boundary;
+                # only the monotonic clock advances, avoiding a minute-long test.
+                clock = iter([0] + [61] * 10000)
+                with self.subTest(command=arguments[:2]), patch.object(
+                    native.time, "monotonic", side_effect=lambda: next(clock)
+                ):
+                    self.assertEqual(
+                        cli.run(arguments, payload=payload, limit=limit).strip(),
+                        b"ciphertext-received",
+                    )
+
+    def test_metadata_and_expired_document_calls_still_retire_owned_process(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text("#!/usr/bin/python3\nimport sys\nsys.stdin.buffer.read()\n")
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            cli = native.NativeCLI(cfg)
+            real_popen = native.subprocess.Popen
+            cases = [
+                (["item", "get", "fixture"], b"", custody.MAX_PACKAGE, 61),
+                (["document", "get", "fixture"], b"", 1024, 61),
+                (["document", "create", "-"], b"x" * (1024 * 1024 + 1), 1024, 601),
+                (["document", "get", "fixture"], b"", custody.MAX_PACKAGE, 601),
+            ]
+            for arguments, payload, limit, elapsed in cases:
+                processes = []
+
+                def start(*args, **kwargs):
+                    process = real_popen(*args, **kwargs)
+                    processes.append(process)
+                    return process
+
+                clock = iter([0] + [elapsed] * 10000)
+                with self.subTest(command=arguments[:2], elapsed=elapsed), patch.object(
+                    native.subprocess, "Popen", side_effect=start
+                ), patch.object(
+                    native.time, "monotonic", side_effect=lambda: next(clock)
+                ), self.assertRaisesRegex(ValueError, "timed out"):
+                    cli.run(arguments, payload=payload, limit=limit)
+                self.assertEqual(len(processes), 1)
+                self.assertIsNotNone(processes[0].poll())
+                self.assertTrue(processes[0].stdin.closed)
+                self.assertTrue(processes[0].stdout.closed)
+
 
     def test_native_cli_forces_desktop_mode_in_the_actual_child(self):
         with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
