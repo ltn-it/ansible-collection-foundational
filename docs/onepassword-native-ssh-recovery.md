@@ -62,8 +62,11 @@ and noncanonical address forms are rejected. Proxies remain disabled.
 
 Check mode validates the contract, metadata and public identities without
 claiming the approval, reading the password or starting SSH. Actual consumption
-claims the approval once, disables core dumps, reads the exact password through
-an inherited descriptor, revalidates both item identities, sends exact bytes
+claims the approval once, disables core dumps, directs CLI stdout exclusively
+into a private anonymous pipe and reads the exact password into mutable memory.
+It uses no output-file path: native CLI file replacement cannot safely target
+an inherited `/dev/fd` path. CLI output never inherits the terminal or a log.
+The consumer revalidates both item identities, sends exact bytes
 without a newline, closes SSH stdin and wipes its mutable secret buffer.
 The returned receipt contains only public identities and operation status.
 

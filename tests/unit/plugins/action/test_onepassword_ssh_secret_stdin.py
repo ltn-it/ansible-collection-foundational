@@ -213,8 +213,8 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
         op_path,
         "import os, sys\n"
         "args = sys.argv[1:]\n"
-        "descriptor = int(args[args.index('--out-file') + 1].rsplit('/', 1)[1])\n"
-        "os.write(descriptor, {0!r})\n".format(SECRET),
+        "assert '--out-file' not in args\n"
+        "os.write(1, {0!r})\n".format(SECRET),
     )
     _write_executable(
         ssh_path,
@@ -457,8 +457,8 @@ def test_secret_reader_uses_mutable_readv_and_rejects_short_or_oversized_values(
             op_path,
             "import os, sys\n"
             "args = sys.argv[1:]\n"
-            "fd = int(args[args.index('--out-file') + 1].rsplit('/', 1)[1])\n"
-            "os.write(fd, {0!r})\n".format(payload),
+            "assert '--out-file' not in args\n"
+            "os.write(1, {0!r})\n".format(payload),
         )
         client = SimpleNamespace(
             requested_binary=str(op_path),
@@ -468,6 +468,41 @@ def test_secret_reader_uses_mutable_readv_and_rejects_short_or_oversized_values(
         )
         with pytest.raises(AnsibleActionFail):
             plugin._read_secret_bytes(client, password_config)
+
+
+def test_secret_reader_supports_vendor_cli_rejecting_fd_output_paths(tmp_path, capfd):
+    """The native CLI unlinks --out-file paths; its stdout must stay private."""
+    op_path = tmp_path / "op"
+    _write_executable(
+        op_path,
+        "import os, stat, sys\n"
+        "if '--out-file' in sys.argv:\n"
+        "    sys.stderr.write('could not delete inherited fd: operation not permitted')\n"
+        "    raise SystemExit(37)\n"
+        "if os.isatty(1) or not stat.S_ISFIFO(os.fstat(1).st_mode):\n"
+        "    raise SystemExit(38)\n"
+        "os.write(1, {0!r})\n".format(SECRET),
+    )
+    client = SimpleNamespace(
+        requested_binary=str(op_path),
+        binary=str(op_path),
+        binary_sha256=hashlib.sha256(op_path.read_bytes()).hexdigest(),
+        environment={"HOME": str(tmp_path), "PATH": os.environ["PATH"]},
+    )
+    password_config = {
+        "vault_id": VAULT_ID,
+        "item_id": PASSWORD_ITEM_ID,
+        "field_id": "password",
+        "account_id": ACCOUNT_ID,
+        "password_length": 64,
+    }
+    secret = plugin._read_secret_bytes(client, password_config)
+    try:
+        assert isinstance(secret, bytearray) and secret == SECRET
+        captured = capfd.readouterr()
+        assert captured.out == "" and captured.err == ""
+    finally:
+        secret[:] = b"\0" * len(secret)
 
 
 def test_core_dump_boundary_sets_and_verifies_zero(monkeypatch):

@@ -382,10 +382,6 @@ def _inspect_boundaries(config):
 
 
 def _read_secret_bytes(client, password_config):
-    if not os.path.exists("/dev/fd"):
-        _fail(
-            "The controller cannot provide the required inherited descriptor boundary."
-        )
     read_descriptor, write_descriptor = os.pipe()
     secret = bytearray(password_config["password_length"])
     overflow = bytearray(1)
@@ -410,16 +406,15 @@ def _read_secret_bytes(client, password_config):
                     password_config["account_id"],
                     "--force",
                     "--no-newline",
-                    "--out-file",
-                    "/dev/fd/{0}".format(write_descriptor),
                     reference,
                 ],
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
+                # The native CLI replaces --out-file paths, including /dev/fd.
+                # Bind stdout to the anonymous pipe; never inherit the terminal.
+                stdout=write_descriptor,
                 stderr=subprocess.DEVNULL,
                 env=client.environment,
                 close_fds=True,
-                pass_fds=(write_descriptor,),
             )
         except (OSError, subprocess.SubprocessError):
             _fail("1Password secret transport could not be started safely.")
