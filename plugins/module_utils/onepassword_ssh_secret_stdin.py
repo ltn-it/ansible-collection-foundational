@@ -625,7 +625,9 @@ def _run_ssh(config, known_host_line, public_identity, secret):
         if config.get("destination_address"):
             arguments[3:3] = [
                 "-o", "Hostname={0}".format(config["destination_address"]),
-                "-o", "HostKeyAlias={0}".format(config["destination_host"]),
+                "-o", "HostKeyAlias={0}".format(
+                    config["known_hosts_identity"]["host_token"]
+                ),
             ]
         try:
             consumer = subprocess.Popen(

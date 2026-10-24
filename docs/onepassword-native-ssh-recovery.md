@@ -53,8 +53,10 @@ private-key export, item edit, rotation or deletion.
 
 An optional `destination_address` selects one canonical unicast IPv4 routing
 address. When provided it is part of the signed destination binding. SSH uses
-that literal address while retaining `destination_host` as its exact host-key
-alias, with the same port and independently pinned Ed25519 key. The caller must
+that literal address while using the validated known-host host-and-port token
+as its exact host-key alias: `[host]:port` for nondefault ports and the bare
+host for port22. This preserves the independently pinned Ed25519 key and port.
+The caller must
 separately admit any required private transport; the consumer creates no tunnel
 and forwards no Agent. Empty or omitted address preserves the original arguments,
 receipt and signed binding. Hostnames, IPv6, unspecified, multicast, broadcast

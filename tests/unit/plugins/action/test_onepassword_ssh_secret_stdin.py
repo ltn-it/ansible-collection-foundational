@@ -192,23 +192,27 @@ def _write_executable(path, source):
     path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
 
-def _write_valid_known_hosts(tmp_path):
+def _write_valid_known_hosts(tmp_path, port=2222):
     path = tmp_path / "known_hosts"
+    host_token = SUBJECT if port == 22 else "[{0}]:{1}".format(SUBJECT, port)
     path.write_text(
-        "[{0}]:2222 {1}\n".format(SUBJECT, HOST_PUBLIC_KEY), encoding="ascii"
+        "{0} {1}\n".format(host_token, HOST_PUBLIC_KEY), encoding="ascii"
     )
     path.chmod(0o600)
     return path
 
 
-@pytest.mark.parametrize("destination_address", ["", "127.0.0.1", "192.0.2.42"])
+@pytest.mark.parametrize(
+    ("destination_address", "destination_port"),
+    [("", 2222), ("127.0.0.1", 2222), ("192.0.2.42", 2222), ("127.0.0.1", 22)],
+)
 def test_consumer_keeps_secret_out_of_result_and_process_arguments(
-    tmp_path, monkeypatch, destination_address
+    tmp_path, monkeypatch, destination_address, destination_port
 ):
     marker = tmp_path / "ssh-success"
     op_path = tmp_path / "op"
     ssh_path = tmp_path / "ssh"
-    _write_valid_known_hosts(tmp_path)
+    _write_valid_known_hosts(tmp_path, destination_port)
     _write_executable(
         op_path,
         "import os, sys\n"
@@ -249,7 +253,13 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
                 "UpdateHostKeys=no",
                 "VerifyHostKeyDNS=no",
             } | (
-                {"Hostname=" + destination_address, "HostKeyAlias=" + SUBJECT}
+                {
+                    "Hostname=" + destination_address,
+                    "HostKeyAlias=" + (
+                        SUBJECT if destination_port == 22
+                        else "[{0}]:{1}".format(SUBJECT, destination_port)
+                    ),
+                }
                 if destination_address else set()
             ),
             SECRET,
@@ -258,7 +268,9 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
     )
     agent_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     agent_socket.bind(str(tmp_path / "agent.sock"))
-    arguments = _arguments(tmp_path, destination_address=destination_address)
+    arguments = _arguments(
+        tmp_path, destination_address=destination_address, destination_port=destination_port
+    )
     config = plugin._normalize_arguments(arguments)
     fake_client = SimpleNamespace(
         requested_binary=str(op_path),
