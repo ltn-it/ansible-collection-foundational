@@ -1,7 +1,6 @@
 """Primary-first key admission, immutable records and metadata-only public output."""
 
 import copy
-import hashlib
 import json
 import pickle
 import unittest
@@ -86,7 +85,12 @@ class KeyCustodyTests(unittest.TestCase):
         result = self.apply()
         self.assertEqual((self.generated, self.reads), (1, 2))
         self.assertTrue(result["created"] and result["primary_verified"] and result["secondary_verified"])
-        self.assertEqual(result["key_sha256"], hashlib.sha256(PASSWORD.encode()).hexdigest())
+        self.assertEqual(set(result), {
+            "schema_version", "subject", "source_machine_id", "luks_uuid", "header_sha256",
+            "mount", "path", "exists", "created", "primary_verified", "primary_version",
+            "onepassword", "secondary_required", "secondary_verified", "reconciled_unknown_write",
+        })
+        self.assertNotIn("key_sha256", result)
         self.assertEqual(result["onepassword"], contract()["onepassword"])
         self.assertNotIn(PASSWORD, json.dumps(result))
         self.assertEqual([x[0] for x in self.client.calls], ["read", "read", "create", "read"])

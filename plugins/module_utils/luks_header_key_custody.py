@@ -6,7 +6,6 @@ Only metadata leaves the manager. Secret material is available solely through
 the internal primary consumer boundary, never as an Ansible return value.
 """
 
-import hashlib
 import hmac
 import re
 import uuid
@@ -124,7 +123,6 @@ def _receipt(contract, path, record=None, *, created=False, secondary_verified=F
         "mount": contract["mount"], "path": path, "exists": record is not None,
         "created": created, "primary_verified": record is not None,
         "primary_version": 1 if record is not None else None,
-        "key_sha256": hashlib.sha256(record["password"].encode("ascii")).hexdigest() if record else None,
         "onepassword": dict(record["onepassword"]) if record else dict(contract["onepassword"]),
         "secondary_required": contract["onepassword_required"],
         "secondary_verified": secondary_verified, "reconciled_unknown_write": reconciled,
