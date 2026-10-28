@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    terragrunt - Exclude unset or empty optional Vault environment variables to prevent
+    Ansible omit placeholders from being passed as certificate paths or credentials.
