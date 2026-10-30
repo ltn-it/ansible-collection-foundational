@@ -374,3 +374,20 @@ releases:
       - shared-assets-sync.yml
       - terragrunt-vault-private-ca.yml
     release_date: '2026-10-21'
+  1.38.0:
+    changes:
+      bugfixes:
+        - terragrunt - Exclude unset or empty optional Vault environment variables
+          to prevent Ansible omit placeholders from being passed as certificate paths
+          or credentials.
+      minor_changes:
+        - Document Nexus candidates, exact-byte validated Galaxy promotion, transition
+          limitations, and per-Collection cutover evidence.
+        - Release preparation and back-sync rely on native central review events instead
+          of dispatching the retired local review workflow.
+    fragments:
+      - 668-terragrunt-optional-vault-environment.yml
+      - central-collection-review-policy.yml
+      - central-release-review.yml
+      - nexus-candidate-guidance.yml
+    release_date: '2026-10-29'
