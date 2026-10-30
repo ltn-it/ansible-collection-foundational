@@ -1,5 +1,0 @@
----
-bugfixes:
-  - >-
-    luks_header_custody - accept a verified empty HTTP 204 response for scoped
-    token retirement, while rejecting empty JSON responses and unexpected 204 bodies.

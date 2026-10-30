@@ -1,6 +1,0 @@
----
-bugfixes:
-  - >-
-    Normalize the native Document creation response's uuid field alongside id.
-    Require one valid unambiguous item identifier and retain the separate exact
-    item, vault, revision and complete ciphertext readback checks.

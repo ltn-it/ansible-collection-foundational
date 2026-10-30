@@ -391,3 +391,103 @@ releases:
       - central-release-review.yml
       - nexus-candidate-guidance.yml
     release_date: '2026-10-29'
+  1.39.0:
+    changes:
+      bugfixes:
+        - Accept multiword OpenSSH public-key comments from the native Agent without
+          changing fingerprint validation or the single-line, size and key-type boundaries.
+        - Align the isolated native desktop fixture with the authenticated account-list
+          and user-get identity contract, and keep socket-alias fixtures inside the
+          private controller HOME on Linux and macOS.
+        - Allow bounded native encrypted Document transfers larger than 1 MiB to finish
+          within 600 seconds instead of applying the 60-second metadata deadline.
+          Preserve the shorter metadata deadline, byte bounds, desktop authentication
+          and single-use creation approval. Unknown outcomes still require read-only
+          reconciliation before another creation attempt.
+        - Explicitly select native desktop biometric authentication for SSH Key metadata
+          operations, matching the Password client.
+        - Native 1Password consumers bind the selected registered account to the authenticated
+          desktop current user instead of relying on whoami; exact account, sign-in
+          hostname and operator allowlist checks remain enforced.
+        - Native LUKS header custody now revalidates uncached detailed Document metadata
+          before and after downloads, so a concurrent provider revision cannot be
+          hidden by a cached item list.
+        - Native LUKS header custody preserves the approved desktop authentication
+          session when invoking the pinned 1Password CLI. Previously the detached
+          CLI session could reject an operator's completed sign-in. Executor and provider
+          identity checks, bounded I/O and child cleanup remain enforced.
+        - Native header custody and Password-item clients now explicitly select desktop
+          CLI integration and reject session-token backends as before.
+        - Normalize the native Document creation response's uuid field alongside id.
+          Require one valid unambiguous item identifier and retain the separate exact
+          item, vault, revision and complete ciphertext readback checks.
+        - luks_header_custody - accept a verified empty HTTP 204 response for scoped
+          token retirement, while rejecting empty JSON responses and unexpected 204
+          bodies.
+        - luks_header_escrow - bind the controller-only stat to local non-become execution
+          with the current Ansible interpreter and private local temporary directory,
+          preserving source host settings in read-only execution environments.
+        - luks_header_escrow - capture and clean raw header scratch in one bounded
+          managed-side snapshot process shared with revision planning; restrict raw
+          scratch to protected tmpfs.
+        - luks_header_escrow - leave LUKS metadata and UUID inspection in revision
+          planning to the bounded snapshot operation.
+        - luks_header_escrow - preserve integer header sizes in revision receipts
+          on the minimum supported Ansible version.
+        - luks_header_snapshot - use a non-EINTR termination exception so Python selectors
+          cannot silently retry handled termination, and reap only the owned cryptsetup
+          process group.
+        - onepassword_secret_item - accept complete 64-character SHA-256 tags and
+          bypass the CLI cache during immutable item metadata checks.
+        - onepassword_ssh_secret_stdin - bind a literal-route SSH host alias to the
+          already validated known-host token, retaining its nondefault port for strict
+          key lookup.
+        - onepassword_ssh_secret_stdin - direct native CLI output into a private anonymous
+          pipe instead of using an output-file path that the CLI attempts to replace;
+          preserve exact-length input, mutable-buffer cleanup and terminal-output
+          isolation.
+      minor_changes:
+        - Add a default-off signed literal IPv4 route for native recovery while retaining
+          the exact target hostname, Ed25519 host-key pin and disabled proxy/forwarding
+          boundaries.
+        - Preserve existing item, executable, Agent, host-key, signature, replay,
+          secret-lifetime and fixed-command boundaries.
+        - Share exact SSH Key metadata validation and signed SSH recovery stdin consumption
+          between Ansible actions and attested native desktop callers without importing
+          Ansible on the native caller.
+        - luks_header_escrow - add an explicitly enabled revision entrypoint that
+          returns exact source UUID, header size and SHA-256 without a wrapping key
+          or raw-header transfer.
+        - luks_header_key_custody - add an internal primary-first immutable KV2 wrapping-key
+          custody boundary with deferred creation, independent-copy checks and metadata-only
+          receipts.
+        - onepassword_secret_item - share the signed metadata-only Password planner
+          and creator with a native desktop Python API that does not require Ansible.
+      security_fixes:
+        - Stop returning a password-derived digest in public Header-key custody receipts;
+          retain immutable backend references and internal constant-time key readback
+          verification.
+    fragments:
+      - luks-header-controller-private-temp.yml
+      - luks-header-custody-documentation.yml
+      - luks-header-key-custody.yml
+      - luks-header-key-public-receipt.yml
+      - luks-header-native-document-create-uuid.yml
+      - luks-header-native-document-freshness.yml
+      - luks-header-native-large-document-timeout.yml
+      - luks-header-revision-discovery-timeout.yml
+      - luks-header-revision-snapshot.yml
+      - luks-header-vault-no-content.yml
+      - native-desktop-auth-session.yml
+      - native-desktop-authenticated-identity.yml
+      - native-desktop-backend-explicit.yml
+      - native-desktop-linux-consumer-fixtures.yml
+      - native-secret-private-pipe.yml
+      - native-ssh-port-host-alias.yml
+      - native-ssh-recovery-consumer.yml
+      - onepassword-native-password-item.yml
+    modules:
+      - description: Capture a bounded LUKS2 header revision on the managed host.
+        name: luks_header_snapshot
+        namespace: ''
+    release_date: '2026-10-30'

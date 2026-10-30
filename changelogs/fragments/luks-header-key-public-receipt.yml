@@ -1,5 +1,0 @@
----
-security_fixes:
-  - >-
-    Stop returning a password-derived digest in public Header-key custody receipts; retain immutable backend references
-    and internal constant-time key readback verification.
