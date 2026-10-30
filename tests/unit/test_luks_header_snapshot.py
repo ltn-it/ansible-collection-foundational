@@ -12,6 +12,8 @@ import tempfile
 import time
 import unittest
 
+import yaml
+
 from plugins.module_utils.luks_header_snapshot import snapshot
 
 
@@ -92,6 +94,72 @@ else:raise SystemExit(8)
             snapshot(**{**self.options, "expected_machine_id": "b" * 32}, cryptsetup_path=binary)
         self.assertFalse(marker.exists())
         self.no_raw_scratch()
+
+    def test_fifo_machine_identity_is_refused_without_blocking_or_starting_crypto(self):
+        binary, marker = self.fake_cli("valid")
+        fifo = Path(self.executable_root.name) / "identity-fifo"
+        os.mkfifo(fifo)
+        options = {**self.options, "machine_id_path": str(fifo), "cryptsetup_path": binary}
+        program = '''import json,sys
+sys.path.insert(0,sys.argv[1])
+from plugins.module_utils.luks_header_snapshot import snapshot
+try:snapshot(**json.loads(sys.argv[2]))
+except ValueError:sys.exit(23)
+raise SystemExit('Non-regular machine identity was accepted')
+'''
+        root = str(Path(__file__).resolve().parents[2])
+        child = subprocess.Popen([sys.executable, "-I", "-S", "-c", program, root, json.dumps(options)],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            try:
+                output, errors = child.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.fail("Machine identity FIFO blocked before the bounded snapshot lifecycle")
+            self.assertEqual(child.returncode, 23, (output + errors).decode(errors="replace"))
+            self.assertFalse(marker.exists())
+            self.no_raw_scratch()
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.wait()
+            child.stdout.close()
+            child.stderr.close()
+
+    def test_oversized_machine_identity_is_refused_before_crypto(self):
+        binary, marker = self.fake_cli("valid")
+        self.identity.write_text(" " * 1000000 + "a" * 32 + "\n")
+        with self.assertRaisesRegex(ValueError, "Wrong source machine"):
+            snapshot(**self.options, cryptsetup_path=binary)
+        self.assertFalse(marker.exists())
+        self.no_raw_scratch()
+
+    def test_real_role_precheck_rejects_fifo_and_oversize_before_later_tasks(self):
+        root = Path(self.executable_root.name)
+        repository = Path(__file__).resolve().parents[2]
+        role = repository / "roles/luks_header_escrow"
+        tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
+        check = next(task for task in tasks if task["name"] ==
+                     "Require the pinned source machine through the bounded shared precheck")
+        fifo = root / "role-identity-fifo"
+        os.mkfifo(fifo)
+        oversized = root / "role-identity-oversized"
+        oversized.write_text(" " * 1000 + "a" * 32 + "\n")
+        marker = root / "passed-precheck"
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(root / "local"),
+               "ANSIBLE_REMOTE_TEMP": str(root / "remote")}
+        env.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
+        for identity, expected in ((fifo, 2), (oversized, 2), (self.identity, 0)):
+            with self.subTest(identity=identity.name):
+                book = root / "identity.yml"
+                book.write_text(yaml.safe_dump([{"hosts": "all", "gather_facts": False, "vars": {
+                    "role_path": str(role), "luks_header_escrow_enabled": True,
+                    "luks_header_escrow_expected_machine_id": "a" * 32,
+                    "luks_header_escrow_machine_id_path": str(identity)}, "tasks": [check,
+                    {"ansible.builtin.copy": {"dest": str(marker), "content": "passed", "mode": "0600"}}]}]))
+                done = subprocess.run(["ansible-playbook", "-i", "localhost,", "-c", "local", str(book)],
+                                      env=env, capture_output=True, text=True, timeout=15)
+                self.assertEqual(done.returncode, expected, done.stdout + done.stderr)
+                self.assertEqual(marker.exists(), expected == 0)
 
     def test_wrong_uuid_is_rejected_before_temporary_capture(self):
         binary, marker = self.fake_cli("fail")

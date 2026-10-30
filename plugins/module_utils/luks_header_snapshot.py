@@ -15,6 +15,7 @@ import tempfile
 import uuid
 
 from .luks_header_recovery import MAX_HEADER, protected_tmpfs
+from ._source_machine_identity import require_machine_identity
 
 
 class SnapshotInterrupted(RuntimeError):
@@ -78,12 +79,7 @@ def snapshot(device, expected_uuid, temporary_root="/run", include_payload=False
     ):
         raise ValueError("Invalid source machine identity.")
     if expected_machine_id:
-        if (
-            not isinstance(machine_id_path, str) or not os.path.isabs(machine_id_path)
-            or os.path.realpath(machine_id_path) != machine_id_path
-            or Path(machine_id_path).read_text().strip() != expected_machine_id
-        ):
-            raise ValueError("Wrong source machine.")
+        require_machine_identity(machine_id_path, expected_machine_id)
     if (
         not isinstance(device, str) or not device.startswith("/dev/")
         or os.path.realpath(device) != device

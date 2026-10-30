@@ -62,7 +62,7 @@ options:
   machine_id_path:
     type: path
     default: /etc/machine-id
-    description: Canonical installed source identity file.
+    description: Protected canonical regular source identity file, at most 33 bytes including the optional newline.
 author:
   - Lightning IT (@lightning-it)
 """

@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    luks_header_snapshot and luks_header_escrow - reject special, oversized or unprotected machine identity files before
+    bounded descriptor reads and cryptsetup execution, using the same private precheck in both callers.
