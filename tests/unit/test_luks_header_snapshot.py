@@ -145,6 +145,11 @@ raise SystemExit('Non-regular machine identity was accepted')
         oversized = root / "role-identity-oversized"
         oversized.write_text(" " * 1000 + "a" * 32 + "\n")
         marker = root / "passed-precheck"
+        selected = root / "selected-interpreter-used"
+        interpreter = root / "configured-python"
+        interpreter.write_text("#!/bin/sh\nprintf 'selected\\n' >> '" + str(selected)
+                               + "'\nexec '" + sys.executable + "' \"$@\"\n")
+        interpreter.chmod(0o700)
         env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(root / "local"),
                "ANSIBLE_REMOTE_TEMP": str(root / "remote")}
         env.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
@@ -153,12 +158,14 @@ raise SystemExit('Non-regular machine identity was accepted')
                 book = root / "identity.yml"
                 book.write_text(yaml.safe_dump([{"hosts": "all", "gather_facts": False, "vars": {
                     "role_path": str(role), "luks_header_escrow_enabled": True,
+                    "ansible_python_interpreter": str(interpreter),
                     "luks_header_escrow_expected_machine_id": "a" * 32,
                     "luks_header_escrow_machine_id_path": str(identity)}, "tasks": [check,
                     {"ansible.builtin.copy": {"dest": str(marker), "content": "passed", "mode": "0600"}}]}]))
                 done = subprocess.run(["ansible-playbook", "-i", "localhost,", "-c", "local", str(book)],
                                       env=env, capture_output=True, text=True, timeout=15)
                 self.assertEqual(done.returncode, expected, done.stdout + done.stderr)
+                self.assertTrue(selected.exists(), "Role precheck bypassed the configured target interpreter")
                 self.assertEqual(marker.exists(), expected == 0)
 
     def test_wrong_uuid_is_rejected_before_temporary_capture(self):
