@@ -30,7 +30,7 @@ argument_specs:
       luks_header_escrow_machine_id_path:
         type: path
         default: /etc/machine-id
-        description: Installed source identity file.
+        description: Protected canonical regular source identity file, at most 33 bytes including the optional newline.
       luks_header_escrow_schema_version:
         type: int
         default: 1

@@ -12,20 +12,23 @@
   ansible.builtin.import_tasks: remote_preflight.yml
   when: luks_header_escrow_enabled | bool
 
-- name: Read the pinned source machine identity
-  ansible.builtin.slurp:
-    src: "{{ luks_header_escrow_machine_id_path }}"
-  register: _luks_header_escrow_machine_id
-  when:
-    - luks_header_escrow_enabled | bool
-    - luks_header_escrow_expected_machine_id | length > 0
-  no_log: true
-
-- name: Require the exact expected source machine before header capture
-  ansible.builtin.assert:
-    that:
-      - _luks_header_escrow_machine_id.content | b64decode | trim == luks_header_escrow_expected_machine_id
-    quiet: true
+- name: Require the pinned source machine through the bounded shared precheck
+  ansible.builtin.script:
+    cmd: >-
+      {{ (role_path ~ '/../../plugins/module_utils/_source_machine_identity.py') | quote }}
+      {{ luks_header_escrow_machine_id_path | quote }}
+      {{ luks_header_escrow_expected_machine_id | quote }}
+    executable: >-
+      {{
+        _luks_header_escrow_identity_python
+        if _luks_header_escrow_identity_python not in
+        ['auto', 'auto_silent', 'auto_legacy', 'auto_legacy_silent']
+        else ansible_facts.discovered_interpreter_python | mandatory
+      }}
+  vars:
+    _luks_header_escrow_identity_python: >-
+      {{ ansible_python_interpreter | default(lookup('ansible.builtin.config', 'INTERPRETER_PYTHON')) }}
+  changed_when: false
   when:
     - luks_header_escrow_enabled | bool
     - luks_header_escrow_expected_machine_id | length > 0

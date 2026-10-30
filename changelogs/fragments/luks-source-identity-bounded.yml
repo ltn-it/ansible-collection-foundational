@@ -1,0 +1,6 @@
+---
+bugfixes:
+  - >-
+    luks_header_snapshot and luks_header_escrow - reject special, oversized or unprotected machine identity files before
+    bounded descriptor reads and cryptsetup execution, using the same private precheck in both callers.
+  - luks_header_escrow - run the identity precheck with the configured or discovered managed-host Ansible interpreter.
