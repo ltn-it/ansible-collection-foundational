@@ -13,8 +13,10 @@ another source, revision, key purpose, secondary policy or unexpected field is
 a conflict. The existing `VaultHTTP` client rejects deleted/destroyed history,
 redirects and implicit proxy/TLS bypasses and uses CAS0 for creation.
 
-`manage_key` returns only metadata and a key fingerprint. `plan` reads primary
-HC custody first and never invokes generation or secondary secret readback.
+`manage_key` returns only revision metadata, immutable backend references and
+verified custody states. Public receipts contain no password-derived digest or
+key fingerprint. `plan` reads primary HC custody first and never invokes
+generation or secondary secret readback.
 If a record already exists, `apply` and `verify` reuse it without generation or
 write; a required independent copy must match its exact positive item pins and
 key. A plan may discover those public pins; consuming a key requires them to be

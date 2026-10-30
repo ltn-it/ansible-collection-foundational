@@ -13,7 +13,7 @@ DOCUMENTATION = r"""
 ---
 module: luks_header_snapshot
 short_description: Capture a bounded LUKS2 header revision on the managed host
-version_added: "1.38.0"
+version_added: "1.39.0"
 description:
   - Uses a protected tmpfs directory and removes it before returning any result.
   - Defaults to metadata only; no provider or controller plaintext is used.
