@@ -23,7 +23,7 @@
       ansible.builtin.import_tasks: remote_preflight.yml
 
     - name: Discover the installed source device
-      ansible.builtin.import_tasks: discover.yml
+      ansible.builtin.import_tasks: discover-device.yml
 
     - name: Inspect exact header bytes without transferring them
       lit.foundational.luks_header_snapshot:
@@ -51,14 +51,18 @@
 
     - name: Publish only the pinned header revision metadata
       ansible.builtin.set_fact:
-        luks_header_escrow_revision_result:
-          schema_version: 1
-          subject: "{{ luks_header_escrow_subject }}"
-          source_machine_id: "{{ luks_header_escrow_expected_machine_id }}"
-          luks_uuid: "{{ _luks_header_escrow_snapshot.luks_uuid }}"
-          header_sha256: "{{ _luks_header_escrow_snapshot.raw_sha256 }}"
-          raw_size_bytes: "{{ _luks_header_escrow_snapshot.raw_size_bytes }}"
-          scratch_removed: true
+        luks_header_escrow_revision_result: >-
+          {{
+            {
+              'schema_version': 1,
+              'subject': luks_header_escrow_subject,
+              'source_machine_id': luks_header_escrow_expected_machine_id,
+              'luks_uuid': _luks_header_escrow_snapshot.luks_uuid,
+              'header_sha256': _luks_header_escrow_snapshot.raw_sha256,
+              'raw_size_bytes': _luks_header_escrow_snapshot.raw_size_bytes | int,
+              'scratch_removed': true
+            }
+          }}
         cacheable: false
       changed_when: false
       no_log: true
