@@ -1,0 +1,7 @@
+---
+bugfixes:
+  - >-
+    Native LUKS header custody preserves the approved desktop authentication
+    session when invoking the pinned 1Password CLI. Previously the detached
+    CLI session could reject an operator's completed sign-in. Executor and
+    provider identity checks, bounded I/O and child cleanup remain enforced.

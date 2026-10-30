@@ -96,12 +96,11 @@ class _FakeClient:
 
     def metadata(self, arguments, operation):
         self.calls.append((list(arguments), operation, False))
-        if arguments[0] == "whoami":
-            return {
-                "account_uuid": ACCOUNT_ID,
-                "url": "https://example.1password.com",
-                "user_uuid": USER_UUID,
-            }
+        if arguments[:2] == ["account", "list"]:
+            return [{"account_uuid": ACCOUNT_ID, "url": "example.1password.com",
+                     "user_uuid": USER_UUID}]
+        if arguments[:3] == ["user", "get", "--me"]:
+            return {"id": USER_UUID}
         if arguments[:2] == ["vault", "get"]:
             return {"id": VAULT_ID}
         if arguments[:2] == ["item", "list"]:
@@ -255,3 +254,13 @@ def test_operator_user_uuid_must_be_allowlisted():
     )
     with pytest.raises(AnsibleActionFail):
         plugin._OnePasswordSecretItemStore(client).inspect(config)
+
+
+@pytest.mark.parametrize("inherited", [None, "false", "true", "unexpected"])
+def test_desktop_backend_is_explicit_and_cannot_be_disabled_by_inheritance(inherited):
+    environment = {"HOME": "/tmp/home", "UNRELATED": "not-admitted"}
+    if inherited is not None:
+        environment["OP_BIOMETRIC_UNLOCK_ENABLED"] = inherited
+    assert plugin._OnePasswordCLI._minimal_environment(environment) == {
+        "HOME": "/tmp/home", "OP_BIOMETRIC_UNLOCK_ENABLED": "true"
+    }

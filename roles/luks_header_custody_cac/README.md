@@ -60,6 +60,8 @@ For `*_onepassword_enabled: true`, select `*_onepassword_transport`, set
 
 The final Document title appends the package SHA256. Existing Documents must
 match title, category, tags, pinned revision when supplied, and every byte.
+Document discovery and revision checks use uncached detailed metadata before
+and after each download; cached revisions cannot satisfy independent readback.
 An initial creation requires `*_approval` and `*_approval_authority`: the
 existing independent Ed25519 signature/replay contract, with operation
 `create-onepassword-header-document`, target=source subject, and binding equal
@@ -88,6 +90,13 @@ host Ansible, shell command input, Vault credentials or recovery-password reads.
 The launcher must bind the complete installed Collection and record the actual
 native process, CLI pin and result under the applicable execution authorization.
 A response file or hash alone does not prove admitted execution.
+
+Complete desktop sign-in and invoke the native adapter within the same execution
+session. The CLI child retains that approved session: starting a new session can
+discard the desktop integration's authentication even after successful sign-in.
+The adapter still checks the exact executor, executable and provider identities,
+allowlists its environment, bounds each operation and terminates a stalled child.
+Do not export session tokens or replace these checks to work around authentication.
 
 Creation uses a separate `apply` request and the unchanged one-time signed
 provider authority. After creation, use a new `verify` request and native

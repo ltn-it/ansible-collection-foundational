@@ -18,7 +18,29 @@ from .luks_header_custody import (
     validate_read_pins,
     verify_download,
 )
-from .onepassword_boundary import claim_approval, normalize_approval, trusted_executable
+from .onepassword_boundary import (
+    claim_approval,
+    native_desktop_identity,
+    normalize_approval,
+    trusted_executable,
+)
+
+METADATA_TIMEOUT_SECONDS = 60
+DOCUMENT_TRANSFER_TIMEOUT_SECONDS = 600
+LARGE_DOCUMENT_BYTES = 1024 * 1024
+
+
+def _operation_timeout(arguments, payload_size, output_limit):
+    """Keep metadata short while admitting bounded large encrypted transfers."""
+    command = tuple(arguments[:2])
+    if (
+        command == ("document", "create")
+        and payload_size > LARGE_DOCUMENT_BYTES
+        or command == ("document", "get")
+        and output_limit > LARGE_DOCUMENT_BYTES
+    ):
+        return DOCUMENT_TRANSFER_TIMEOUT_SECONDS
+    return METADATA_TIMEOUT_SECONDS
 
 
 class NativeCLI:
@@ -42,6 +64,8 @@ class NativeCLI:
             for key in ("HOME", "PATH", "TMPDIR", "LANG", "LC_ALL")
             if os.environ.get(key)
         }
+        # This client admits desktop integration only, regardless of inherited CLI mode.
+        self.env["OP_BIOMETRIC_UNLOCK_ENABLED"] = "true"
         if not self.env.get("HOME"):
             raise ValueError("Native desktop HOME is required.")
 
@@ -55,11 +79,12 @@ class NativeCLI:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=self.env,
-            start_new_session=True,
+            # Desktop authentication is scoped to the approved caller's session.
+            start_new_session=False,
         )
         output = bytearray()
         offset = 0
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + _operation_timeout(arguments, len(payload), limit)
         try:
             with selectors.DefaultSelector() as selector:
                 os.set_blocking(process.stdout.fileno(), False)
@@ -107,6 +132,9 @@ class NativeCLI:
 
     def metadata(self, arguments):
         return json.loads(self.run(arguments))
+
+    def identity(self, account_id):
+        return native_desktop_identity(self.metadata, account_id)
 
     def metadata_create(self, arguments, payload):
         return json.loads(self.run(arguments, payload=payload))
@@ -190,7 +218,7 @@ def inspect(cli, config, sha):
     if cli.run(["--version"]).decode("ascii").strip() != config["cli_version"]:
         raise ValueError("Native 1Password CLI version drift.")
     account = ["--account", config["account_id"]]
-    identity = cli.metadata(["whoami", *account, "--format", "json"])
+    identity = native_desktop_identity(cli.metadata, config["account_id"])
     if (
         identity.get("account_uuid") != config["account_id"]
         or identity.get("user_uuid") not in config["authorized_user_uuids"]
@@ -204,7 +232,17 @@ def inspect(cli, config, sha):
     if vault.get("id") != config["vault_id"]:
         raise ValueError("Native vault identity drift.")
     rows = cli.metadata(
-        ["item", "list", "--vault", config["vault_id"], *account, "--format", "json"]
+        [
+            "item",
+            "list",
+            "--cache=false",
+            "--long",
+            "--vault",
+            config["vault_id"],
+            *account,
+            "--format",
+            "json",
+        ]
     )
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("Invalid native item metadata.")
@@ -274,6 +312,23 @@ def onepassword_read_custody(cli, config, pins):
     }
 
 
+def _created_document_id(result):
+    """Normalize item and Document CLI responses without accepting ambiguity."""
+    if not isinstance(result, dict):
+        raise ValueError("Native creation response must contain one exact item ID.")
+    identifiers = [result[key] for key in ("id", "uuid") if key in result]
+    if (
+        not identifiers
+        or any(
+            not isinstance(value, str) or not re.fullmatch(r"[a-z0-9]{26}", value)
+            for value in identifiers
+        )
+        or len(set(identifiers)) != 1
+    ):
+        raise ValueError("Native creation response must contain one exact item ID.")
+    return identifiers[0]
+
+
 def onepassword_custody(
     cli,
     config,
@@ -330,7 +385,7 @@ def onepassword_custody(
             raw,
         )
         current = inspect(cli, config, sha)
-        if current is None or result.get("id") != current["id"]:
+        if current is None or _created_document_id(result) != current["id"]:
             raise ValueError(
                 "Native creation outcome is not uniquely verified; inspect before retry."
             )
