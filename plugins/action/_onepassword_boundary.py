@@ -6,6 +6,7 @@ from ..module_utils.onepassword_boundary import (
     _write_private_file,
     approval_signing_payload,
     claim_approval,
+    native_desktop_identity,
     normalize_approval,
     normalize_approval_authority,
     normalize_sha256,

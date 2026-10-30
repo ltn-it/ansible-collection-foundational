@@ -114,6 +114,12 @@ The current collection compatibility baseline is `ansible-core` 2.18.0 or newer.
   boundaries, and keeps the password-free credential phase separate from
   header decryption. It neither changes keyslots nor substitutes a provider
   checksum test for independent recovery acceptance.
+  Native Document uploads larger than 1 MiB and Document downloads with a
+  larger output bound have a finite 600-second transfer deadline. Metadata
+  calls retain their 60-second deadline. Byte limits, desktop authentication,
+  signed create-only approval and unknown-outcome reconciliation are unchanged.
+  Creation responses may identify the item with `id` or the Document command's
+  `uuid`; conflicting or invalid identifiers fail closed before acceptance.
 
 - `lit.foundational.terragrunt`
   Terragrunt wrapper that:
@@ -140,6 +146,23 @@ The current collection compatibility baseline is `ansible-core` 2.18.0 or newer.
   - optional virtual media insert/eject.
 
 ---
+
+### Native desktop Password item boundary
+
+The controller-only `onepassword_secret_item` action and its
+[native Python API](docs/onepassword-native-password-item.md) share the same
+metadata-only planner, internally generated passwords and signed one-time
+creation authority. The native API does not require Ansible on the desktop.
+
+### Native desktop SSH recovery boundary
+
+The `onepassword_ssh_key_item` and `onepassword_ssh_secret_stdin` actions share
+their implementation with [native SSH APIs](docs/onepassword-native-ssh-recovery.md).
+An attested desktop caller can validate the exact SSH identity or consume the
+signed recovery contract with its approved native 1Password client and Agent.
+Ansible remains in the execution environment. The native APIs require no
+Ansible installation on the desktop and retain the existing target, signature,
+replay and stdin-only secret boundaries.
 
 ## Dependencies
 

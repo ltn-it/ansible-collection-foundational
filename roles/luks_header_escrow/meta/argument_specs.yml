@@ -7,6 +7,30 @@ argument_specs:
         type: bool
         default: false
         description: Whether to capture and persist the installed LUKS2 header.
+      luks_header_escrow_revision_enabled:
+        type: bool
+        default: false
+        description: Enable the separate metadata-only revision task entrypoint.
+      luks_header_escrow_timeout_seconds:
+        type: int
+        default: 30
+        description: Bounded managed-side cryptsetup command timeout, from 1 to 60 seconds.
+      luks_header_escrow_expected_header_sha256:
+        type: str
+        default: ""
+        description: Optional planned raw digest checked before payload transfer or encryption.
+      luks_header_escrow_expected_machine_id:
+        type: str
+        default: ""
+        description: Pinned source machine ID; required by revision planning.
+      luks_header_escrow_expected_uuid:
+        type: str
+        default: ""
+        description: Pinned source LUKS UUID; required by revision planning.
+      luks_header_escrow_machine_id_path:
+        type: path
+        default: /etc/machine-id
+        description: Installed source identity file.
       luks_header_escrow_schema_version:
         type: int
         default: 1
@@ -70,4 +94,7 @@ argument_specs:
         description: Permit a regular-file LUKS2 source for explicit test or lab use.
   preflight:
     short_description: Validate the LUKS-header escrow interface and controller state without contacting the host.
+    options: *luks_header_escrow_options
+  revision:
+    short_description: Inspect an exact source revision without a wrapping key or header transfer.
     options: *luks_header_escrow_options

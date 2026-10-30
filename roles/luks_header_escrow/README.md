@@ -10,6 +10,7 @@ they are never written as controller plaintext.
 - A Linux managed host with exactly one active `crypttab` source.
 - `cryptsetup`, `findfs`, `readlink`, `id`, `awk`, and Bash at the declared absolute paths.
 - Privilege to read and back up the installed LUKS2 header.
+- A canonical protected **tmpfs** root for raw scratch; `/run` is the default.
 - An Ansible Vault identity already loaded by the controller. Select its label
   with `luks_header_escrow_vault_id`; the role never accepts password material.
 - An existing, non-symlinked `0700` escrow root owned by the effective
@@ -50,10 +51,13 @@ See `defaults/main.yml` for the complete interface. Important inputs are:
 The managed-host temporary root must already be canonical, owned by the
 effective execution user, grant that owner `rwx`, and deny group/other write
 access. Every ancestor back to `/` must be owned by root or that user and either
-deny group/other writes or use sticky-directory protection. The role validates
-the allocated `0700` directory and binds the transferred base64 payload to the
-remotely inspected byte size and SHA-256 before any immutable ciphertext is
-published.
+deny group/other writes or use sticky-directory protection. The shared `luks_header_snapshot` module allocates private scratch, validates the
+real UUID, size and SHA-256 and removes all owned files in the same managed-side
+process before returning. Each cryptsetup child has a bounded timeout and its
+own process group. Failure and handled termination reap only that child and
+clean up scratch; controller loss does not leave an idle between-task raw file.
+Host process `SIGKILL` cannot run cleanup; scratch is restricted to volatile
+tmpfs and this is not a power-loss/cold-boot acceptance claim.
 
 On success, `luks_header_escrow_result` contains only safe metadata: whether
 ciphertext was created, existence, path, ciphertext SHA-256, and LUKS UUID. It
@@ -62,6 +66,30 @@ never contains the header or the plaintext escrow document.
 The `preflight` task entrypoint validates the same role interface plus
 controller path, ownership, and permission policy without contacting the
 managed host.
+
+The delegated controller stat uses the current Ansible interpreter, local
+connection, no privilege escalation, and Ansible's private `DEFAULT_LOCAL_TMP`.
+It does not inherit the source host's login, privilege or temporary-directory
+requirements. This also supports read-only execution environments whose login
+home is not writable. Source SSH and remote temporary-directory settings stay
+scoped to the managed host.
+
+The separate `revision` task entrypoint uses the same managed snapshot with
+`include_payload=false`. Enable it with `luks_header_escrow_revision_enabled`
+(default `false`) and pin both expected machine ID and UUID. It needs no wrapping
+key, controller ciphertext path or provider access. Its closed public result
+`luks_header_escrow_revision_result` contains schema version, subject, source
+machine ID, UUID, raw size, raw SHA-256 and completed scratch removal. It never
+contains raw bytes or a scratch path. A disabled plan clears any stale result.
+The normal `main` entrypoint does not implicitly run this planning operation.
+
+`luks_header_escrow_timeout_seconds` defaults to 30 and must be 1–60 seconds per
+cryptsetup command. A revision is an observation, not a lock on future keyslot
+changes; the consuming capture must compare the actual raw hash again before
+publishing to an external provider. For typed version-bound capture, set
+`luks_header_escrow_expected_header_sha256`: the managed snapshot rejects drift
+before returning raw payload or creating controller ciphertext. Existing generic
+callers default to an empty optional digest.
 
 The role captures and verifies an immutable header document; it does not restore
 a header, rotate LUKS keys, prune escrow, or replace the required independent
