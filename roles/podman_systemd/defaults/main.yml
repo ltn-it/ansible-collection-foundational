@@ -31,3 +31,6 @@ podman_systemd_wants:
 # same network options as podman kube play, for example:
 # podman-default-kube-network:ip=10.89.0.20
 podman_systemd_networks: []
+# Optional stable native k8s-file destination. Requires a prepared regular file
+# and exactly one application container, without init containers, in one Pod.
+podman_systemd_log_path: ""

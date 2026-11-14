@@ -56,7 +56,16 @@
           metadata:
             name: podman-systemd-basic
           spec:
-            containers: []
+            containers:
+              - name: application
+                image: example.invalid/fixture:1
+
+    - name: Prepare a private native log file for the application writer
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/application.log"
+        content: "synthetic fixture\n"
+        mode: "0600"
+        force: false
 
     - name: Converge valid native Quadlet network and restart contract
       ansible.builtin.include_role:
@@ -69,6 +78,7 @@
         podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
         podman_systemd_networks:
           - "private-access:ip=10.89.0.20"
+        podman_systemd_log_path: "{{ podman_systemd_test_root }}/application.log"
 
     - name: Reject a multiline Quadlet network before mutation
       block:
@@ -90,5 +100,91 @@
         - name: Record fail-closed malformed-network rejection
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_root }}/malformed-network-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Reject newline in native log destination before mutation
+      block:
+        - name: Attempt newline in the native destination
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: newline-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "/tmp/test\n[Service]\nExecStart=/bin/false"
+      rescue:
+        - name: Record rejected newline destination
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/newline-log-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Reject specifier in native log destination before mutation
+      block:
+        - name: Attempt specifier in the native destination
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: specifier-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "/tmp/%t.log"
+      rescue:
+        - name: Record rejected specifier destination
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/specifier-log-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Reject traversal in native log destination before mutation
+      block:
+        - name: Attempt traversal in the native destination
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: traversal-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "/tmp/../test.log"
+      rescue:
+        - name: Record rejected traversal destination
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/traversal-log-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Write a manifest with incompatible multiple application writers
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/multi-pod.yml"
+        mode: "0600"
+        content: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: multiple-writers
+          spec:
+            containers:
+              - {name: first, image: example.invalid/fixture:1}
+              - {name: second, image: example.invalid/fixture:1}
+
+    - name: Reject multiple application writers sharing one native file
+      block:
+        - name: Attempt an incompatible multi-container log destination
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: multiple-writers
+            podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/multi-pod.yml"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "{{ podman_systemd_test_root }}/application.log"
+      rescue:
+        - name: Record rejected multiple-writer configuration
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/multiple-writers-rejected"
             content: "rejected\n"
             mode: "0600"

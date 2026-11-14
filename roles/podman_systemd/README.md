@@ -26,6 +26,18 @@ When the rendered Quadlet changes while the requested action is `present` or
 `started`, the role restarts the service so changed network settings take
 effect during the same reconciliation.
 
+`podman_systemd_log_path` optionally selects a stable native `k8s-file`
+destination through bounded `PodmanArgs=--log-driver=k8s-file --log-opt=path=...`.
+The file must already be a regular file with one link, writable by the runtime
+account, inside a prepared private directory. Only a single Pod containing one
+application container and no init containers is accepted, preventing multiple
+application writers from sharing the file. Paths containing whitespace, control
+characters, unit specifiers or traversal components are rejected before mutation.
+An empty value preserves Podman's default logging. No reader, capture worker or
+new root service is installed. Configure operating-system log rotation separately;
+this setting provides neither rotation nor a hard size limit. Existing file
+history is not migrated automatically when changing the destination.
+
 See `defaults/main.yml` for the remaining service, manifest, state, and
 installation inputs.
 

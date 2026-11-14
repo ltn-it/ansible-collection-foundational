@@ -35,8 +35,21 @@
               | regex_findall('(?m)^.* restart podman-systemd-basic\\.service$')
               | length
             ) == 1
+          - >-
+            ('PodmanArgs=--log-driver=k8s-file --log-opt=path='
+             ~ podman_systemd_test_root ~ '/application.log')
+            in (podman_systemd_rendered_quadlet.content | b64decode)
           - podman_systemd_malformed_network_rejection.stat.exists
+          - lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/multiple-writers-rejected') | length > 0
+          - not lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/quadlet/multiple-writers.kube')
           - not lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/quadlet/podman-systemd-invalid.kube')
         fail_msg: >-
           Native Quadlet network rendering, changed-unit restart, or
           fail-closed malformed-input handling did not match the contract.
+
+    - name: Verify every invalid log destination was rejected before unit creation
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/' ~ item ~ '-log-rejected') | length > 0
+          - not lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/quadlet/' ~ item ~ '-log.kube')
+      loop: [newline, specifier, traversal]

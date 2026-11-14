@@ -38,3 +38,68 @@
         | length == 0
     fail_msg: "podman_systemd variables are missing or invalid."
   tags: always
+
+- name: Validate the optional native log destination
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_log_path is string
+      - >-
+        podman_systemd_log_path == '' or
+        (podman_systemd_log_path is match('^/[A-Za-z0-9_./-]+$') and
+         not podman_systemd_log_path.endswith('/') and
+         '..' not in podman_systemd_log_path.split('/') and
+         '.' not in podman_systemd_log_path.split('/') and
+         '//' not in podman_systemd_log_path)
+    fail_msg: >-
+      The native log destination must be an absolute canonical path without
+      unit specifiers or control characters.
+  tags: always
+
+- name: Read the single-container manifest before selecting a shared native log path
+  ansible.builtin.slurp:
+    src: "{{ podman_systemd_manifest_path }}"
+  register: podman_systemd_log_manifest
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action != 'absent'
+  no_log: true
+  tags: always
+
+- name: Require exactly one Pod application container without initializers
+  ansible.builtin.assert:
+    that:
+      - (podman_systemd_log_manifest.content | b64decode | from_yaml_all | list) | length == 1
+      - (podman_systemd_log_manifest.content | b64decode | from_yaml).kind == 'Pod'
+      - (podman_systemd_log_manifest.content | b64decode | from_yaml).spec.containers | length == 1
+      - (podman_systemd_log_manifest.content | b64decode | from_yaml).spec.initContainers | default([]) | length == 0
+    fail_msg: A shared native log path requires one Pod with one application container and no init containers.
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action != 'absent'
+  no_log: true
+  tags: always
+
+- name: Inspect the prepared native log destination without following links
+  ansible.builtin.stat:
+    path: "{{ podman_systemd_log_path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: podman_systemd_log_file
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action != 'absent'
+  tags: always
+
+- name: Require a prepared unlinked regular native log file
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_log_file.stat.exists
+      - podman_systemd_log_file.stat.isreg | default(false)
+      - not podman_systemd_log_file.stat.islnk | default(false)
+      - podman_systemd_log_file.stat.nlink == 1
+    fail_msg: Prepare a regular native log file and private parent directory before managing the kube unit.
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action != 'absent'
+  tags: always
