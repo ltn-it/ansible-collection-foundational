@@ -55,7 +55,8 @@ manifest. Restore the actual loaded source before retrying. Unsupported loaded
 command layouts fail before mutation. Both joined and separate native log-option
 forms are inspected. The preflight also runs with `--tags podman_systemd`.
 Loaded native start/down commands must report failures normally and identify
-exactly one manifest. Role-generated logging/network options and trailing
+exactly one manifest, including services using Podman's default logging without
+an explicit log path. Role-generated logging/network options and trailing
 boolean options are parsed explicitly; additional manifests or unsupported
 loaded options require operator reconciliation before a stop or removal.
 An `absent` request tolerates a proven

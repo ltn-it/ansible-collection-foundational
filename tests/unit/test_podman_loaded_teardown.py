@@ -18,7 +18,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 class LoadedTeardownTests(unittest.TestCase):
     def probe(self, *, missing=False, other_stop=False, no_stop=False, native=True,
               bad_signature=False, multiple=False, optimize=0, separate=False, ignored_stop=False,
-              multiple_sources=False, trailing_flags=False, ignored_start=False, unsupported_flag=False):
+              multiple_sources=False, trailing_flags=False, ignored_start=False, unsupported_flag=False,
+              default_logging=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         source = pathlib.Path(temporary.name) / 'pod.yml'
@@ -27,6 +28,8 @@ class LoadedTeardownTests(unittest.TestCase):
         executable = '/usr/bin/podman' if native else '/usr/bin/sleep'
         start = [executable, 'kube', 'play', '--log-driver=k8s-file',
                  '--log-opt=path=/private/application.log', str(source)]
+        if default_logging:
+            start = [executable, 'kube', 'play', str(source)]
         if separate:
             start = [executable, 'kube', 'play', '--log-driver', 'k8s-file',
                      '--log-opt', 'path=/private/application.log', str(source)]
@@ -117,6 +120,18 @@ class LoadedTeardownTests(unittest.TestCase):
     def test_rejects_an_ignored_native_start_failure(self):
         result, _ = self.probe(ignored_start=True)
         self.assertFalse(result['ok'])
+
+    def test_default_logging_still_requires_the_actual_loaded_manifest(self):
+        result, _ = self.probe(default_logging=True, missing=True)
+        self.assertFalse(result['ok'])
+
+    def test_default_logging_cannot_hide_an_ignored_native_down_failure(self):
+        result, _ = self.probe(default_logging=True, ignored_stop=True)
+        self.assertFalse(result['ok'])
+
+    def test_default_logging_accepts_a_verified_loaded_native_source(self):
+        result, _ = self.probe(default_logging=True)
+        self.assertEqual(result, {'ok': True, 'native': True})
 
     def test_non_native_service_needs_no_native_teardown_manifest(self):
         result, calls = self.probe(native=False, missing=True)
