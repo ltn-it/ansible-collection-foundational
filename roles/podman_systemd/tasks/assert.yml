@@ -55,10 +55,20 @@
       unit specifiers or control characters.
   tags: always
 
+- name: Resolve the actual Ansible Python interpreter for native log validation
+  ansible.builtin.setup:
+    gather_subset: ['!all', '!min', python]
+    filter: [ansible_python]
+  register: podman_systemd_log_python
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
 - name: Require trusted directory ancestry for the native log destination
   ansible.builtin.command:
     argv:
-      - "{{ ansible_facts.get('python', {}).get('executable', '/usr/bin/python3') }}"
+      - "{{ podman_systemd_log_python.ansible_facts.ansible_python.executable }}"
       - -c
       - |
         import os,pathlib,stat,sys
@@ -72,6 +82,7 @@
       - "{{ podman_systemd_log_path }}"
   changed_when: false
   check_mode: false
+  register: podman_systemd_log_ancestry_check
   when:
     - podman_systemd_log_path | length > 0
     - podman_systemd_action not in ['absent', 'stopped']

@@ -53,6 +53,11 @@ parents and symlink ancestors are rejected before a Quadlet is rendered. The
 manifest preflight requires sequence-shaped container fields and a mapping-shaped
 application entry; it does not replace Podman's complete manifest validation.
 
+The ancestry check resolves the executing Ansible Python interpreter with a
+Python-only setup query, including when `gather_facts: false` is configured.
+It does not assume `/usr/bin/python3` or execute automatic-discovery tokens as
+program names. Stopped/absent actions skip this query with the log prechecks.
+
 ## Dependencies
 
 None.

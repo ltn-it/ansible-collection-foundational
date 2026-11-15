@@ -342,3 +342,54 @@
             dest: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
             content: "stop requested through the isolated systemctl fixture\n"
             mode: "0600"
+
+- name: Validate native logging with configured and automatic interpreters without play facts
+  hosts: localhost
+  gather_facts: false
+  vars:
+    podman_systemd_test_root: "{{ molecule_ephemeral_directory }}/podman-systemd"
+    podman_systemd_test_python: /run/lit-podman-systemd-basic-logs/python-custom
+    ansible_python_interpreter: "{{ podman_systemd_test_python }}"
+    podman_systemd_unit_name: podman-systemd-basic
+    podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/pod.yml"
+    podman_systemd_log_path: /run/lit-podman-systemd-basic-logs/application.log
+    podman_systemd_quadlet_dir: "{{ podman_systemd_test_root }}/quadlet"
+    podman_systemd_scope: user
+  tasks:
+    - name: Prepare a distinct configured interpreter fixture
+      ansible.builtin.file:
+        src: "{{ ansible_playbook_python }}"
+        dest: "{{ podman_systemd_test_python }}"
+        state: link
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+    - name: Clear all inherited facts before the configured-interpreter check
+      ansible.builtin.meta: clear_facts
+
+    - name: Run packaged native prechecks without play-level fact gathering
+      ansible.builtin.include_role:
+        name: lit.foundational.podman_systemd
+        tasks_from: assert
+
+    - name: Require the configured interpreter to execute the ancestry probe
+      ansible.builtin.assert:
+        that: podman_systemd_log_ancestry_check.cmd[0] == podman_systemd_test_python
+
+    - name: Clear all inherited facts before automatic interpreter discovery
+      ansible.builtin.meta: clear_facts
+
+    - name: Run packaged native prechecks through automatic interpreter discovery
+      ansible.builtin.include_role:
+        name: lit.foundational.podman_systemd
+        tasks_from: assert
+      vars:
+        ansible_python_interpreter: auto_silent
+
+    - name: Require a resolved executable rather than an automatic-selection token
+      ansible.builtin.assert:
+        that:
+          - podman_systemd_log_ancestry_check.cmd[0].startswith('/')
+          - >-
+            podman_systemd_log_ancestry_check.cmd[0] ==
+            podman_systemd_log_python.ansible_facts.ansible_python.executable

@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - resolve the executing Ansible interpreter for native log
+    ancestry validation even when the play disables automatic fact gathering.
