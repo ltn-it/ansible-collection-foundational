@@ -542,6 +542,14 @@
             content: "result fixture\n"
             mode: "0600"
 
+        - name: Record existing configuration and calls before the stopped request
+          ansible.builtin.set_fact:
+            podman_systemd_stopped_quadlet_before: >-
+              {{ lookup('ansible.builtin.file',
+                        podman_systemd_test_quadlet_dir ~ '/teardown-fixture.kube', rstrip=false) }}
+            podman_systemd_stopped_calls_before: >-
+              {{ lookup('ansible.builtin.file', podman_systemd_test_log).splitlines() | length }}
+
         - name: Require a failed result to reject an explicit stopped request
           block:
             - name: Stop through the actual role with an unconfirmed service result
@@ -557,6 +565,18 @@
               ansible.builtin.assert:
                 that: >-
                   ansible_failed_task.name == 'Require successful Podman kube service teardown before Quadlet removal'
+
+        - name: Require an explicit stop to preserve the existing lifecycle configuration
+          ansible.builtin.assert:
+            that:
+              - >-
+                lookup('ansible.builtin.file',
+                       podman_systemd_test_quadlet_dir ~ '/teardown-fixture.kube', rstrip=false) ==
+                podman_systemd_stopped_quadlet_before
+              - >-
+                lookup('ansible.builtin.file', podman_systemd_test_log).splitlines()
+                [podman_systemd_stopped_calls_before | int:]
+                | select('search', '(^|\s)daemon-reload(\s|$)') | list | length == 0
 
         - name: Require a failed unit result to abort removal
           block:

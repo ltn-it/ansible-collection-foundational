@@ -54,6 +54,9 @@ any removal stop or disable; a proven missing unit does not. A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same
 post-stop state proof; a failed teardown cannot be reported as a successful stop.
+An explicit stop does not render a new Quadlet, create its directory or reload
+systemd first. It stops the existing loaded definition and preserves those bytes
+for recovery even if the caller supplies different desired settings.
 Stop errors and a failed service result keep
 the Quadlet for recovery. Restore the manifest and recover/reset the failed
 service as appropriate before retrying. Check mode cannot prove a future stop.
