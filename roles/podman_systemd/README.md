@@ -41,6 +41,18 @@ history is not migrated automatically when changing the destination.
 See `defaults/main.yml` for the remaining service, manifest, state, and
 installation inputs.
 
+The prepared destination must be writable in the same effective identity used
+by this role to manage Podman; validation runs before Quadlet rendering or a
+restart. Stopping or removing a unit does not require the log file or manifest
+to remain present. Optional path syntax always rejects control characters,
+including a trailing newline.
+
+Native log destinations require real parent directories owned by root or the
+role's effective runtime UID, with no group/other write bits. Shared writable
+parents and symlink ancestors are rejected before a Quadlet is rendered. The
+manifest preflight requires sequence-shaped container fields and a mapping-shaped
+application entry; it does not replace Podman's complete manifest validation.
+
 ## Dependencies
 
 None.
@@ -68,9 +80,3 @@ MIT
 ## Author
 
 Lightning IT
-
-The prepared destination must be writable in the same effective identity used
-by this role to manage Podman; validation runs before Quadlet rendering or a
-restart. Stopping or removing a unit does not require the log file or manifest
-to remain present. Optional path syntax always rejects control characters,
-including a trailing newline.

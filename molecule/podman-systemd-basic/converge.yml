@@ -4,6 +4,7 @@
   gather_facts: true
   vars:
     podman_systemd_test_root: "{{ molecule_ephemeral_directory }}/podman-systemd"
+    podman_systemd_test_native_log_root: /run/lit-podman-systemd-basic-logs
     podman_systemd_test_bin: "{{ podman_systemd_test_root }}/bin"
     podman_systemd_test_log: "{{ podman_systemd_test_root }}/systemctl.log"
     podman_systemd_test_manifest: "{{ podman_systemd_test_root }}/pod.yml"
@@ -19,6 +20,7 @@
       loop:
         - "{{ podman_systemd_test_root }}"
         - "{{ podman_systemd_test_bin }}"
+        - "{{ podman_systemd_test_native_log_root }}"
 
     - name: Write isolated systemctl fixture
       ansible.builtin.copy:
@@ -62,7 +64,7 @@
 
     - name: Prepare a private native log file for the application writer
       ansible.builtin.copy:
-        dest: "{{ podman_systemd_test_root }}/application.log"
+        dest: "{{ podman_systemd_test_native_log_root }}/application.log"
         content: "synthetic fixture\n"
         mode: "0600"
         force: false
@@ -78,7 +80,7 @@
         podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
         podman_systemd_networks:
           - "private-access:ip=10.89.0.20"
-        podman_systemd_log_path: "{{ podman_systemd_test_root }}/application.log"
+        podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/application.log"
 
     - name: Reject a multiline Quadlet network before mutation
       block:
@@ -181,7 +183,7 @@
             podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/multi-pod.yml"
             podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
             podman_systemd_scope: user
-            podman_systemd_log_path: "{{ podman_systemd_test_root }}/application.log"
+            podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/application.log"
       rescue:
         - name: Record rejected multiple-writer configuration
           ansible.builtin.copy:
@@ -191,7 +193,7 @@
 
     - name: Prepare an actual trailing-newline file to test the syntax fence
       ansible.builtin.copy:
-        dest: "{{ podman_systemd_test_root }}/trailing-newline.log\n"
+        dest: "{{ podman_systemd_test_native_log_root }}/trailing-newline.log\n"
         content: "synthetic fixture\n"
         mode: "0600"
         force: false
@@ -206,7 +208,7 @@
             podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
             podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
             podman_systemd_scope: user
-            podman_systemd_log_path: "{{ podman_systemd_test_root }}/trailing-newline.log\n"
+            podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/trailing-newline.log\n"
         - name: Fail if a final newline was accepted
           ansible.builtin.fail:
             msg: A final-newline path was accepted.
@@ -222,7 +224,7 @@
 
     - name: Prepare a file without effective write permission
       ansible.builtin.copy:
-        dest: "{{ podman_systemd_test_root }}/unwritable.log"
+        dest: "{{ podman_systemd_test_native_log_root }}/unwritable.log"
         content: "synthetic fixture\n"
         mode: "0400"
         force: false
@@ -237,7 +239,7 @@
             podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
             podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
             podman_systemd_scope: user
-            podman_systemd_log_path: "{{ podman_systemd_test_root }}/unwritable.log"
+            podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/unwritable.log"
         - name: Fail if an unwritable destination was accepted
           ansible.builtin.fail:
             msg: An unwritable log file was accepted.
@@ -252,6 +254,65 @@
             dest: "{{ podman_systemd_test_root }}/unwritable-log-rejected"
             content: "rejected\n"
             mode: "0600"
+
+    - name: Prepare isolated ancestry fixture directories
+      ansible.builtin.file:
+        path: "{{ podman_systemd_test_native_log_root }}/{{ item.name }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        - {name: shared, mode: "0777"}
+        - {name: alias-target, mode: "0755"}
+
+    - name: Prepare regular files below the ancestry fixtures
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_native_log_root }}/{{ item }}/application.log"
+        content: "synthetic fixture\n"
+        mode: "0600"
+        force: false
+      loop: [shared, alias-target]
+
+    - name: Create the ancestor alias negative fixture
+      ansible.builtin.file:
+        src: "{{ podman_systemd_test_native_log_root }}/alias-target"
+        dest: "{{ podman_systemd_test_native_log_root }}/ancestor-alias"
+        state: link
+
+    - name: Reject unsafe ancestry before creating a Quadlet
+      ansible.builtin.include_tasks: tasks/reject-ancestry.yml
+      loop: [shared, ancestor-alias]
+      loop_control:
+        loop_var: podman_systemd_test_ancestor_case
+
+    - name: Prepare malformed container-field fixtures
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/{{ item.name }}.yml"
+        content: >-
+          {{ {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': 'fixture'},
+              'spec': {'containers': item.containers, 'initContainers': item.initializers}} | to_nice_yaml }}
+        mode: "0600"
+      loop:
+        - {name: containers-string, containers: x, initializers: []}
+        - {name: containers-mapping, containers: {application: fixture}, initializers: []}
+        - {name: container-scalar-entry, containers: [x], initializers: []}
+        - name: initializers-mapping
+          containers: [{name: application, image: 'example.invalid/fixture:1'}]
+          initializers: {}
+
+    - name: Bind the existing unit and service calls before malformed manifests
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - "{{ podman_systemd_test_quadlet_dir }}/podman-systemd-basic.kube"
+        - "{{ podman_systemd_test_log }}"
+      register: podman_systemd_test_before_malformed
+
+    - name: Reject malformed fields before changing the existing unit or service
+      ansible.builtin.include_tasks: tasks/reject-manifest-shape.yml
+      loop: [containers-string, containers-mapping, container-scalar-entry, initializers-mapping]
+      loop_control:
+        loop_var: podman_systemd_test_manifest_case
 
     - name: Inspect the once-only stopped-service fixture marker
       ansible.builtin.stat:

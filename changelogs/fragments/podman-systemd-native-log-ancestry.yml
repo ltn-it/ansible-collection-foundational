@@ -1,0 +1,6 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - Reject symbolic-link ancestors, foreign-owned directories
+    and group/other-writable parents for native logs.
+  - podman_systemd - Reject malformed container and initializer field shapes before replacing a Quadlet.

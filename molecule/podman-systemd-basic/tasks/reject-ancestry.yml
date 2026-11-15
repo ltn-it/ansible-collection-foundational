@@ -1,0 +1,26 @@
+---
+- name: Reject the unsafe ancestry fixture before changing the unit
+  block:
+    - name: Attempt a prepared destination under unsafe ancestry
+      ansible.builtin.include_role:
+        name: lit.foundational.podman_systemd
+      vars:
+        podman_systemd_unit_name: "unsafe-{{ podman_systemd_test_ancestor_case }}"
+        podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+        podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+        podman_systemd_scope: user
+        podman_systemd_log_path: >-
+          {{ podman_systemd_test_native_log_root ~ '/' ~
+             podman_systemd_test_ancestor_case ~ '/application.log' }}
+    - name: Fail if unsafe ancestry was accepted
+      ansible.builtin.fail:
+        msg: Unsafe native-log ancestry was accepted.
+  rescue:
+    - name: Require the trusted-ancestry preflight rejection
+      ansible.builtin.assert:
+        that: ansible_failed_task.name == 'Require trusted directory ancestry for the native log destination'
+    - name: Record the unsafe ancestry rejection
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/{{ podman_systemd_test_ancestor_case }}-ancestry-rejected"
+        content: "rejected\n"
+        mode: "0600"

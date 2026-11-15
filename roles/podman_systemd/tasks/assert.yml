@@ -55,6 +55,28 @@
       unit specifiers or control characters.
   tags: always
 
+- name: Require trusted directory ancestry for the native log destination
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts.get('python', {}).get('executable', '/usr/bin/python3') }}"
+      - -c
+      - |
+        import os,pathlib,stat,sys
+        allowed_owners = {0, os.geteuid()}
+        for directory in reversed(pathlib.Path(sys.argv[1]).parents):
+            info = directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid not in allowed_owners
+                    or stat.S_IMODE(info.st_mode) & 0o022):
+                sys.exit(1)
+      - "{{ podman_systemd_log_path }}"
+  changed_when: false
+  check_mode: false
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
 - name: Read the single-container manifest before selecting a shared native log path
   ansible.builtin.slurp:
     src: "{{ podman_systemd_manifest_path }}"
@@ -68,11 +90,26 @@
 - name: Require exactly one Pod application container without initializers
   ansible.builtin.assert:
     that:
-      - (podman_systemd_log_manifest.content | b64decode | from_yaml_all | list) | length == 1
-      - (podman_systemd_log_manifest.content | b64decode | from_yaml).kind == 'Pod'
-      - (podman_systemd_log_manifest.content | b64decode | from_yaml).spec.containers | length == 1
-      - (podman_systemd_log_manifest.content | b64decode | from_yaml).spec.initContainers | default([]) | length == 0
-    fail_msg: A shared native log path requires one Pod with one application container and no init containers.
+      - podman_systemd_log_documents | length == 1
+      - podman_systemd_log_documents[0] is mapping
+      - podman_systemd_log_documents[0].kind | default('') == 'Pod'
+      - podman_systemd_log_documents[0].spec | default(none) is mapping
+      - podman_systemd_log_containers is sequence
+      - podman_systemd_log_containers is not string
+      - podman_systemd_log_containers is not mapping
+      - podman_systemd_log_containers | length == 1
+      - podman_systemd_log_containers[0] is mapping
+      - podman_systemd_log_initializers is sequence
+      - podman_systemd_log_initializers is not string
+      - podman_systemd_log_initializers is not mapping
+      - podman_systemd_log_initializers | length == 0
+    fail_msg: >-
+      A shared native log path requires one Pod with one mapping-shaped application
+      container and an empty initializer sequence.
+  vars:
+    podman_systemd_log_documents: "{{ podman_systemd_log_manifest.content | b64decode | from_yaml_all | list }}"
+    podman_systemd_log_containers: "{{ podman_systemd_log_documents[0].spec.containers | default(none) }}"
+    podman_systemd_log_initializers: "{{ podman_systemd_log_documents[0].spec.initContainers | default([]) }}"
   when:
     - podman_systemd_log_path | length > 0
     - podman_systemd_action not in ['absent', 'stopped']
