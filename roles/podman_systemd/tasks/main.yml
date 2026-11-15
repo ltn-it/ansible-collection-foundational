@@ -3,6 +3,27 @@
   ansible.builtin.import_tasks: assert.yml
   tags: always
 
+- name: Read the Podman kube service load state before teardown
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
+         ['show', podman_systemd_service_name, '--property=LoadState', '--value'] }}
+  register: podman_systemd_removal_load
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    podman_systemd_removal_load.rc != 0 or
+    podman_systemd_removal_load.stdout | trim not in ['loaded', 'not-found']
+  when: podman_systemd_action in ['stopped', 'absent']
+  tags: podman_systemd
+
+- name: Validate the actual loaded native teardown configuration
+  ansible.builtin.include_tasks: teardown_preflight.yml
+  when:
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+  tags: podman_systemd
+
 - name: Ensure Quadlet directory exists
   ansible.builtin.file:
     path: "{{ podman_systemd_quadlet_dir }}"
@@ -58,44 +79,16 @@
           else podman_systemd_action
         )
       }}
-    enabled: "{{ podman_systemd_enabled }}"
+    enabled: "{{ omit if podman_systemd_action == 'stopped' else podman_systemd_enabled }}"
     scope: "{{ podman_systemd_scope }}"
   when: podman_systemd_action in ['present', 'started', 'restarted', 'stopped']
   tags:
     - podman_systemd
 
-- name: Read the Podman kube service load state before removal
-  ansible.builtin.command:
-    argv: >-
-      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
-         ['show', podman_systemd_service_name, '--property=LoadState', '--value'] }}
-  register: podman_systemd_removal_load
-  changed_when: false
-  check_mode: false
-  failed_when: >-
-    podman_systemd_removal_load.rc != 0 or
-    podman_systemd_removal_load.stdout | trim not in ['loaded', 'not-found']
-  when: podman_systemd_action == 'absent'
-  tags:
-    - podman_systemd
-
-- name: Require the teardown manifest before removing a loaded native-log service
-  ansible.builtin.command:
-    argv: [/usr/bin/test, -f, "{{ podman_systemd_manifest_path }}", -a, -r, "{{ podman_systemd_manifest_path }}"]
-  changed_when: false
-  check_mode: false
-  when:
-    - podman_systemd_action == 'absent'
-    - podman_systemd_log_path | length > 0
-    - podman_systemd_removal_load.stdout | trim == 'loaded'
-  tags:
-    - podman_systemd
-
-- name: Stop and disable Podman kube service
+- name: Stop the loaded Podman kube service before disabling or removing it
   ansible.builtin.systemd:
     name: "{{ podman_systemd_service_name }}"
     state: stopped
-    enabled: false
     scope: "{{ podman_systemd_scope }}"
   when:
     - podman_systemd_action == 'absent'
@@ -135,6 +128,16 @@
     - not ansible_check_mode
   tags:
     - podman_systemd
+
+- name: Disable Podman kube service only after confirmed teardown
+  ansible.builtin.systemd:
+    name: "{{ podman_systemd_service_name }}"
+    enabled: false
+    scope: "{{ podman_systemd_scope }}"
+  when:
+    - podman_systemd_action == 'absent'
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+  tags: podman_systemd
 
 - name: Remove Podman kube Quadlet unit
   ansible.builtin.file:

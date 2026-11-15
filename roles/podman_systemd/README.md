@@ -7,7 +7,8 @@ restart, stop, enable, disable, or remove the generated service.
 
 ## Requirements
 
-Podman with native Quadlet support and systemd.
+Podman with native Quadlet support and systemd. Loaded teardown inspection also
+requires systemd's `busctl` with JSON output in the trusted command search path.
 
 ## Variables
 
@@ -46,16 +47,20 @@ The prepared destination must be writable in the same effective identity used
 by this role to manage Podman; validation runs before Quadlet rendering or a
 restart. Stopping or removing a unit does not require the log file to remain
 present. Keep the manifest readable until teardown completes: Podman's generated
-stop command still needs that source. A native-log `stopped` request checks this
-prerequisite before rendering the Quadlet or reloading systemd; restore a missing
-manifest before retrying. An `absent` request tolerates only a proven missing
-systemd unit. A loaded native-log unit also requires the readable manifest before
-any removal stop or disable; a proven missing unit does not. A loaded unit must
+stop command still needs that source. Stopped/absent requests inspect the loaded
+manager's structured ExecStart/ExecStop/ExecStopPost arrays through its D-Bus API.
+The loaded native play and down commands must identify the same readable regular
+manifest, even when the caller omits logging or supplies a different desired
+manifest. Restore the actual loaded source before retrying. Unsupported loaded
+command layouts fail before mutation. An `absent` request tolerates a proven
+missing systemd unit without a manifest. A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same
 post-stop state proof; a failed teardown cannot be reported as a successful stop.
 An explicit stop does not render a new Quadlet, create its directory or reload
-systemd first. It stops the existing loaded definition and preserves those bytes
+systemd first. It also leaves enablement unchanged, since enable/disable can
+implicitly reload a pending definition. Removal disables only after a confirmed
+successful stop. It stops the existing loaded definition and preserves those bytes
 for recovery even if the caller supplies different desired settings.
 Stop errors and a failed service result keep
 the Quadlet for recovery. Restore the manifest and recover/reset the failed
@@ -72,7 +77,8 @@ application entry; it does not replace Podman's complete manifest validation.
 The ancestry check resolves the executing Ansible Python interpreter with a
 Python-only setup query, including when `gather_facts: false` is configured.
 It does not assume `/usr/bin/python3` or execute automatic-discovery tokens as
-program names. Stopped/absent actions skip this query with the log prechecks.
+program names. Loaded stopped/absent actions resolve the executing interpreter
+separately for the read-only manager inspection; they skip active-log prechecks.
 
 ## Dependencies
 

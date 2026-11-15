@@ -65,6 +65,9 @@
               touch "{{ podman_systemd_test_root }}/teardown-stopped"
               ;;
             *" show missing-log-stop-fixture.service "*)
+              case " $* " in
+                *" --value "*) printf '%s\n' loaded; exit 0 ;;
+              esac
               printf '%s\n' 'LoadState=loaded' 'Result=success' 'UnitFileState=enabled'
               if test -f "{{ podman_systemd_test_root }}/missing-log-stopped"; then
                 printf '%s\n' 'ActiveState=inactive' 'SubState=dead'
@@ -88,6 +91,30 @@
               printf '%s\n' enabled
               ;;
           esac
+
+    - name: Write isolated structured bus fixture for loaded command arrays
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_bin }}/busctl"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env python3
+          import json,pathlib,sys
+          root=pathlib.Path('{{ podman_systemd_test_root }}')
+          source=root/('missing-pod.yml' if (root/'loaded-manifest-missing').exists() else 'pod.yml')
+          if 'call' in sys.argv:
+              value={'type':'o','data':['/org/freedesktop/systemd1/unit/fixture_2eservice']}
+          else:
+              property_name=sys.argv[-1]
+              if property_name=='ExecStart':
+                  argv=['/usr/bin/podman','kube','play','--log-driver=k8s-file',
+                        '--log-opt=path=/native-fixture.log',str(source)]
+              elif property_name=='ExecStopPost':
+                  argv=['/usr/bin/podman','kube','down',str(source)]
+              else:
+                  argv=[]
+              value={'type':'a(sasbttttuii)','data':
+                     [['/usr/bin/podman',argv,False,0,0,0,0,0,0,0]] if argv else []}
+          print(json.dumps(value))
 
     - name: Write isolated Kubernetes manifest fixture
       ansible.builtin.copy:
@@ -402,6 +429,15 @@
     - name: Request stopping an existing service after its log vanished
       when: not podman_systemd_stopped_fixture.stat.exists
       block:
+        - name: Bind service calls before the invalid loaded-stop request
+          ansible.builtin.set_fact:
+            podman_systemd_test_invalid_stop_calls_before: >-
+              {{ lookup('ansible.builtin.file', podman_systemd_test_log).splitlines() | length }}
+        - name: Make the loaded manifest unavailable while desired inputs stay valid
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/loaded-manifest-missing"
+            content: 'loaded-state drift fixture'
+            mode: '0600'
         - name: Reject a missing teardown manifest before changing the service
           block:
             - name: Attempt to stop without the required manifest
@@ -410,42 +446,55 @@
               vars:
                 podman_systemd_action: stopped
                 podman_systemd_unit_name: missing-log-stop-fixture
-                podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-pod.yml"
+                podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
                 podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
                 podman_systemd_scope: user
-                podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
+                podman_systemd_log_path: ''
             - name: Fail if a missing teardown manifest was accepted
               ansible.builtin.fail:
                 msg: A missing teardown manifest was accepted.
           rescue:
             - name: Require the teardown prerequisite to reject the request
               ansible.builtin.assert:
-                that: ansible_failed_task.name == 'Require the teardown manifest before stopping a native-log service'
-            - name: Require the rejected request to leave service calls unchanged
-              ansible.builtin.stat:
-                path: "{{ podman_systemd_test_log }}"
-                checksum_algorithm: sha256
-              register: podman_systemd_stop_rejected_calls
+                that: >-
+                  ansible_failed_task.name ==
+                  'Require the loaded native teardown source before any service mutation'
             - name: Verify no service mutation occurred
               ansible.builtin.assert:
                 that: >-
-                  podman_systemd_stop_rejected_calls.stat.checksum ==
-                  podman_systemd_test_before_malformed.results[1].stat.checksum
+                  lookup('ansible.builtin.file', podman_systemd_test_log).splitlines()
+                  [podman_systemd_test_invalid_stop_calls_before | int:]
+                  | select('search', '(^|\s)(stop|disable|enable|daemon-reload)(\s|$)') | list | length == 0
+        - name: Restore only the loaded fixture source
+          ansible.builtin.file:
+            path: "{{ podman_systemd_test_root }}/loaded-manifest-missing"
+            state: absent
+        - name: Bind service calls before an explicit stop with enablement drift
+          ansible.builtin.set_fact:
+            podman_systemd_test_stop_calls_before: >-
+              {{ lookup('ansible.builtin.file', podman_systemd_test_log).splitlines() | length }}
         - name: Stop with the existing manifest and no log file
           ansible.builtin.include_role:
             name: lit.foundational.podman_systemd
           vars:
             podman_systemd_action: stopped
             podman_systemd_unit_name: missing-log-stop-fixture
-            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/desired-missing.yml"
             podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
             podman_systemd_scope: user
-            podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
+            podman_systemd_log_path: ''
+            podman_systemd_enabled: false
         - name: Require the real Ansible systemd module to have issued the stop
           ansible.builtin.assert:
             that: >-
               'stop missing-log-stop-fixture.service'
               in lookup('ansible.builtin.file', podman_systemd_test_log)
+        - name: Require an explicit stop to preserve enablement without implicit reload
+          ansible.builtin.assert:
+            that: >-
+              lookup('ansible.builtin.file', podman_systemd_test_log).splitlines()
+              [podman_systemd_test_stop_calls_before | int:]
+              | select('search', '(^|\s)(disable|enable|daemon-reload)(\s|$)') | list | length == 0
         - name: Record the observed stop command for this synthetic service
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
@@ -480,11 +529,17 @@
 
         - name: Reject a missing manifest before stopping or disabling a loaded unit
           block:
+            - name: Remove only the loaded teardown prerequisite in this fixture
+              ansible.builtin.copy:
+                dest: "{{ podman_systemd_test_root }}/loaded-manifest-missing"
+                content: 'loaded-state drift fixture'
+                mode: '0600'
             - name: Attempt loaded-unit removal without the teardown manifest
               ansible.builtin.include_role:
                 name: lit.foundational.podman_systemd
               vars:
-                podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-manifest.yml"
+                podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+                podman_systemd_log_path: ''
             - name: Fail if removal continued without its teardown source
               ansible.builtin.fail:
                 msg: REMOVAL_WITHOUT_MANIFEST_ACCEPTED
@@ -493,7 +548,12 @@
               ansible.builtin.assert:
                 that: >-
                   ansible_failed_task.name ==
-                  'Require the teardown manifest before removing a loaded native-log service'
+                  'Require the loaded native teardown source before any service mutation'
+
+        - name: Restore the loaded teardown prerequisite
+          ansible.builtin.file:
+            path: "{{ podman_systemd_test_root }}/loaded-manifest-missing"
+            state: absent
 
         - name: Require the rejected removal to preserve the Quadlet and avoid service mutation
           ansible.builtin.assert:
@@ -524,7 +584,7 @@
           rescue:
             - name: Require rejection at the actual systemd stop task
               ansible.builtin.assert:
-                that: ansible_failed_task.name == 'Stop and disable Podman kube service'
+                that: ansible_failed_task.name == 'Stop the loaded Podman kube service before disabling or removing it'
 
         - name: Require the Quadlet after a stop-command error
           ansible.builtin.command:
