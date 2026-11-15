@@ -17,7 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 class LoadedTeardownTests(unittest.TestCase):
     def probe(self, *, missing=False, other_stop=False, no_stop=False, native=True,
-              bad_signature=False, multiple=False, optimize=0):
+              bad_signature=False, multiple=False, optimize=0, separate=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         source = pathlib.Path(temporary.name) / 'pod.yml'
@@ -26,6 +26,9 @@ class LoadedTeardownTests(unittest.TestCase):
         executable = '/usr/bin/podman' if native else '/usr/bin/sleep'
         start = [executable, 'kube', 'play', '--log-driver=k8s-file',
                  '--log-opt=path=/private/application.log', str(source)]
+        if separate:
+            start = [executable, 'kube', 'play', '--log-driver', 'k8s-file',
+                     '--log-opt', 'path=/private/application.log', str(source)]
         stop = ['/usr/bin/podman', 'kube', 'down',
                 str(source.with_name('different.yml')) if other_stop else str(source)]
         calls = []
@@ -67,6 +70,15 @@ class LoadedTeardownTests(unittest.TestCase):
     def test_rejects_missing_actual_source(self):
         result, _ = self.probe(missing=True)
         self.assertFalse(result['ok'])
+
+    def test_separate_native_options_still_require_the_loaded_manifest(self):
+        result, _ = self.probe(separate=True, missing=True)
+        self.assertFalse(result['ok'])
+
+    def test_accepts_separate_native_options_with_a_readable_loaded_manifest(self):
+        result, calls = self.probe(separate=True)
+        self.assertEqual(result, {'ok': True, 'native': True})
+        self.assertEqual(calls, ['ExecStart', 'ExecStop', 'ExecStopPost'])
 
     def test_rejects_disagreeing_loaded_play_and_teardown_sources(self):
         result, _ = self.probe(other_stop=True)

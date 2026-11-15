@@ -35,11 +35,20 @@
             def podman_kube(binary,argv,action):
                 return (pathlib.PurePosixPath(binary).name=='podman' and
                         any(argv[index:index+2]==['kube',action] for index in range(len(argv)-1)))
+            def option_values(argv,name):
+                values=[]
+                for index,item in enumerate(argv):
+                    if item==name:
+                        require(index+1<len(argv) and not argv[index+1].startswith('-'))
+                        values.append(argv[index+1])
+                    elif item.startswith(name+'='):
+                        values.append(item[len(name)+1:])
+                return values
             starts=commands('ExecStart')
             native=[argv for binary,argv in starts if podman_kube(binary,argv,'play') and
-                    any(item.startswith('--log-opt=path=') for item in argv)]
+                    any(item.startswith('path=') for item in option_values(argv,'--log-opt'))]
             if native:
-                require(len(native)==1 and '--log-driver=k8s-file' in native[0])
+                require(len(native)==1 and option_values(native[0],'--log-driver')==['k8s-file'])
                 source=native[0][-1]
                 stops=commands('ExecStop')+commands('ExecStopPost')
                 manifests={argv[-1] for binary,argv in stops if podman_kube(binary,argv,'down')}

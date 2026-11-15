@@ -52,7 +52,9 @@ manager's structured ExecStart/ExecStop/ExecStopPost arrays through its D-Bus AP
 The loaded native play and down commands must identify the same readable regular
 manifest, even when the caller omits logging or supplies a different desired
 manifest. Restore the actual loaded source before retrying. Unsupported loaded
-command layouts fail before mutation. An `absent` request tolerates a proven
+command layouts fail before mutation. Both joined and separate native log-option
+forms are inspected. The preflight also runs with `--tags podman_systemd`.
+An `absent` request tolerates a proven
 missing systemd unit without a manifest. A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same

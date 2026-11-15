@@ -18,7 +18,10 @@
   tags: podman_systemd
 
 - name: Validate the actual loaded native teardown configuration
-  ansible.builtin.include_tasks: teardown_preflight.yml
+  ansible.builtin.include_tasks:
+    file: teardown_preflight.yml
+    apply:
+      tags: podman_systemd
   when:
     - podman_systemd_action in ['stopped', 'absent']
     - podman_systemd_removal_load.stdout | trim == 'loaded'
