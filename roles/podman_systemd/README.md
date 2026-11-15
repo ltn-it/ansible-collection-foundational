@@ -43,8 +43,11 @@ installation inputs.
 
 The prepared destination must be writable in the same effective identity used
 by this role to manage Podman; validation runs before Quadlet rendering or a
-restart. Stopping or removing a unit does not require the log file or manifest
-to remain present. Optional path syntax always rejects control characters,
+restart. Stopping or removing a unit does not require the log file to remain
+present. Keep the manifest readable until teardown completes: Podman's generated
+stop command still needs that source. A native-log `stopped` request checks this
+prerequisite before rendering the Quadlet or reloading systemd; restore a missing
+manifest before retrying. Optional path syntax always rejects control characters,
 including a trailing newline.
 
 Native log destinations require real parent directories owned by root or the

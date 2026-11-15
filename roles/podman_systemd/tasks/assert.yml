@@ -55,6 +55,16 @@
       unit specifiers or control characters.
   tags: always
 
+- name: Require the teardown manifest before stopping a native-log service
+  ansible.builtin.command:
+    argv: [/usr/bin/test, -f, "{{ podman_systemd_manifest_path }}", -a, -r, "{{ podman_systemd_manifest_path }}"]
+  changed_when: false
+  check_mode: false
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action == 'stopped'
+  tags: always
+
 - name: Resolve the actual Ansible Python interpreter for native log validation
   ansible.builtin.setup:
     gather_subset: ['!all', '!min', python]

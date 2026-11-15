@@ -1,0 +1,8 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - reject native-log stop requests with an unreadable teardown manifest
+    before changing the Quadlet or systemd state.
+  - >-
+    podman_systemd - correct the teardown documentation while retaining stop support
+    when only the native log file is absent.

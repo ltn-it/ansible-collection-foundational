@@ -319,16 +319,45 @@
         path: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
       register: podman_systemd_stopped_fixture
 
-    - name: Request stopping an existing service after its log and manifest vanished
+    - name: Request stopping an existing service after its log vanished
       when: not podman_systemd_stopped_fixture.stat.exists
       block:
-        - name: Stop the isolated loaded service without opening either missing file
+        - name: Reject a missing teardown manifest before changing the service
+          block:
+            - name: Attempt to stop without the required manifest
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+              vars:
+                podman_systemd_action: stopped
+                podman_systemd_unit_name: missing-log-stop-fixture
+                podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-pod.yml"
+                podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+                podman_systemd_scope: user
+                podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
+            - name: Fail if a missing teardown manifest was accepted
+              ansible.builtin.fail:
+                msg: A missing teardown manifest was accepted.
+          rescue:
+            - name: Require the teardown prerequisite to reject the request
+              ansible.builtin.assert:
+                that: ansible_failed_task.name == 'Require the teardown manifest before stopping a native-log service'
+            - name: Require the rejected request to leave service calls unchanged
+              ansible.builtin.stat:
+                path: "{{ podman_systemd_test_log }}"
+                checksum_algorithm: sha256
+              register: podman_systemd_stop_rejected_calls
+            - name: Verify no service mutation occurred
+              ansible.builtin.assert:
+                that: >-
+                  podman_systemd_stop_rejected_calls.stat.checksum ==
+                  podman_systemd_test_before_malformed.results[1].stat.checksum
+        - name: Stop with the existing manifest and no log file
           ansible.builtin.include_role:
             name: lit.foundational.podman_systemd
           vars:
             podman_systemd_action: stopped
             podman_systemd_unit_name: missing-log-stop-fixture
-            podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-pod.yml"
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
             podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
             podman_systemd_scope: user
             podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
