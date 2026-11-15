@@ -28,8 +28,9 @@ effect during the same reconciliation.
 
 `podman_systemd_log_path` optionally selects a stable native `k8s-file`
 destination through bounded `PodmanArgs=--log-driver=k8s-file --log-opt=path=...`.
-The file must already be a regular file with one link, writable by the runtime
-account, inside a prepared private directory. Only a single Pod containing one
+The file must already be a regular file with one link, owned by the role's
+effective runtime UID, mode 0600 and writable, inside a prepared private directory.
+Only a single Pod containing one
 application container and no init containers is accepted, preventing multiple
 application writers from sharing the file. Paths containing whitespace, control
 characters, unit specifiers or traversal components are rejected before mutation.

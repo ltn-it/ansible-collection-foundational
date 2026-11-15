@@ -244,16 +244,55 @@
           ansible.builtin.fail:
             msg: An unwritable log file was accepted.
       rescue:
-        - name: Require the actual write-access failure
+        - name: Require the private-file permission guard to reject the file
           ansible.builtin.assert:
             that:
-              - ansible_failed_task.name == 'Require effective write access to the prepared native log destination'
-              - ansible_failed_result.rc == 1
+              - ansible_failed_task.name == 'Require a prepared unlinked regular native log file'
         - name: Record the write-access rejection
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_root }}/unwritable-log-rejected"
             content: "rejected\n"
             mode: "0600"
+
+    - name: Prepare a publicly readable regular log file
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_native_log_root }}/public.log"
+        content: "synthetic fixture\n"
+        mode: "0644"
+        force: false
+
+    - name: Record existing service calls before testing public file permissions
+      ansible.builtin.stat:
+        path: "{{ podman_systemd_test_log }}"
+        checksum_algorithm: sha256
+      register: podman_systemd_test_before_public
+
+    - name: Reject public log file permissions before any service mutation
+      block:
+        - name: Attempt a public native log file
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: public-native-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/public.log"
+        - name: Fail if publicly readable log data were accepted
+          ansible.builtin.fail:
+            msg: Publicly readable native log data were accepted.
+      rescue:
+        - name: Require the actual private-file guard to reject the public file
+          ansible.builtin.assert:
+            that: ansible_failed_task.name == 'Require a prepared unlinked regular native log file'
+        - name: Inspect service calls after rejecting public permissions
+          ansible.builtin.stat:
+            path: "{{ podman_systemd_test_log }}"
+            checksum_algorithm: sha256
+          register: podman_systemd_test_after_public
+        - name: Require service calls to remain unchanged
+          ansible.builtin.assert:
+            that: podman_systemd_test_after_public.stat.checksum == podman_systemd_test_before_public.stat.checksum
 
     - name: Prepare isolated ancestry fixture directories
       ansible.builtin.file:
