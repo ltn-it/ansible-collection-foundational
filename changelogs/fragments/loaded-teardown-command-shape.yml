@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - podman_systemd - reject ignored native command failures and multiple loaded manifest
+    inputs before service mutation, and resolve the manifest independently of trailing
+    supported boolean options.

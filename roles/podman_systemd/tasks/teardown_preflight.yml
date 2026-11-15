@@ -31,7 +31,8 @@
                 for row in value['data']:
                     require(isinstance(row,list) and len(row)==10 and isinstance(row[1],list))
                     require(isinstance(row[0],str) and row[1] and all(isinstance(item,str) for item in row[1]))
-                return [(row[0],row[1]) for row in value['data']]
+                    require(isinstance(row[2],bool))
+                return [(row[0],row[1],row[2]) for row in value['data']]
             def podman_kube(binary,argv,action):
                 return (pathlib.PurePosixPath(binary).name=='podman' and
                         any(argv[index:index+2]==['kube',action] for index in range(len(argv)-1)))
@@ -44,15 +45,42 @@
                     elif item.startswith(name+'='):
                         values.append(item[len(name)+1:])
                 return values
+            def manifest(argv,action):
+                require(argv[1:3]==['kube',action])
+                booleans={'--replace','--service-container'} if action=='play' else {'--force'}
+                valued={'--network','--log-driver','--log-opt'} if action=='play' else set()
+                files=[];index=3
+                while index<len(argv):
+                    item=argv[index]
+                    if item=='--':
+                        files.extend(argv[index+1:]);break
+                    name,separator,value=item.partition('=')
+                    if name in booleans:
+                        require(not separator or value in {'true','false'})
+                    elif name in valued:
+                        if not separator:
+                            index+=1
+                            require(index<len(argv) and not argv[index].startswith('-'))
+                            value=argv[index]
+                        require(bool(value))
+                    elif item.startswith('-'):
+                        raise ValueError('unsupported_loaded_option')
+                    else:
+                        files.append(item)
+                    index+=1
+                require(len(files)==1 and pathlib.PurePosixPath(files[0]).is_absolute())
+                return files[0]
             starts=commands('ExecStart')
-            native=[argv for binary,argv in starts if podman_kube(binary,argv,'play') and
+            native=[(argv,ignored) for binary,argv,ignored in starts if podman_kube(binary,argv,'play') and
                     any(item.startswith('path=') for item in option_values(argv,'--log-opt'))]
             if native:
-                require(len(native)==1 and option_values(native[0],'--log-driver')==['k8s-file'])
-                source=native[0][-1]
+                require(len(native)==1 and not native[0][1])
+                require(option_values(native[0][0],'--log-driver')==['k8s-file'])
+                source=manifest(native[0][0],'play')
                 stops=commands('ExecStop')+commands('ExecStopPost')
-                manifests={argv[-1] for binary,argv in stops if podman_kube(binary,argv,'down')}
-                require(manifests=={source} and pathlib.PurePosixPath(source).is_absolute())
+                downs=[(argv,ignored) for binary,argv,ignored in stops if podman_kube(binary,argv,'down')]
+                require(bool(downs) and all(not ignored for argv,ignored in downs))
+                require({manifest(argv,'down') for argv,ignored in downs}=={source})
                 require(stat.S_ISREG(os.stat(source).st_mode) and os.access(source,os.R_OK))
             result={'ok':True,'native':bool(native)}
         except Exception as error:

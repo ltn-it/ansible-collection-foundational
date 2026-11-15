@@ -54,6 +54,10 @@ manifest, even when the caller omits logging or supplies a different desired
 manifest. Restore the actual loaded source before retrying. Unsupported loaded
 command layouts fail before mutation. Both joined and separate native log-option
 forms are inspected. The preflight also runs with `--tags podman_systemd`.
+Loaded native start/down commands must report failures normally and identify
+exactly one manifest. Role-generated logging/network options and trailing
+boolean options are parsed explicitly; additional manifests or unsupported
+loaded options require operator reconciliation before a stop or removal.
 An `absent` request tolerates a proven
 missing systemd unit without a manifest. A loaded unit must
 stop successfully and report inactive/success
