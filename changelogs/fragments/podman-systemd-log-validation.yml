@@ -1,0 +1,4 @@
+---
+bugfixes:
+  - podman_systemd - Reject trailing-newline log paths and verify effective write access before changing a unit.
+  - podman_systemd - Permit stopping an existing service when its prepared log file or manifest is missing.

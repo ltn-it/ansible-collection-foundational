@@ -52,4 +52,8 @@
         that:
           - lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/' ~ item ~ '-log-rejected') | length > 0
           - not lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/quadlet/' ~ item ~ '-log.kube')
-      loop: [newline, specifier, traversal]
+      loop: [newline, specifier, traversal, trailing-newline, unwritable]
+
+    - name: Verify the missing-file service still received a stop request
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.fileglob', podman_systemd_test_root ~ '/missing-log-stop-proven') | length > 0

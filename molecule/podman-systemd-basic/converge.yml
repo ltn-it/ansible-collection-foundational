@@ -188,3 +188,96 @@
             dest: "{{ podman_systemd_test_root }}/multiple-writers-rejected"
             content: "rejected\n"
             mode: "0600"
+
+    - name: Prepare an actual trailing-newline file to test the syntax fence
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/trailing-newline.log\n"
+        content: "synthetic fixture\n"
+        mode: "0600"
+        force: false
+
+    - name: Reject a prepared path with only a final newline before mutation
+      block:
+        - name: Attempt an existing trailing-newline destination
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: trailing-newline-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "{{ podman_systemd_test_root }}/trailing-newline.log\n"
+        - name: Fail if a final newline was accepted
+          ansible.builtin.fail:
+            msg: A final-newline path was accepted.
+      rescue:
+        - name: Require rejection at the path-syntax fence
+          ansible.builtin.assert:
+            that: ansible_failed_task.name == 'Validate the optional native log destination'
+        - name: Record the final-newline rejection
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/trailing-newline-log-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Prepare a file without effective write permission
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/unwritable.log"
+        content: "synthetic fixture\n"
+        mode: "0400"
+        force: false
+
+    - name: Reject an unwritable prepared destination before changing a unit
+      block:
+        - name: Attempt a read-only destination in the actual controller identity
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_unit_name: unwritable-log
+            podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "{{ podman_systemd_test_root }}/unwritable.log"
+        - name: Fail if an unwritable destination was accepted
+          ansible.builtin.fail:
+            msg: An unwritable log file was accepted.
+      rescue:
+        - name: Require the actual write-access failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require effective write access to the prepared native log destination'
+              - ansible_failed_result.rc == 1
+        - name: Record the write-access rejection
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/unwritable-log-rejected"
+            content: "rejected\n"
+            mode: "0600"
+
+    - name: Inspect the once-only stopped-service fixture marker
+      ansible.builtin.stat:
+        path: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
+      register: podman_systemd_stopped_fixture
+
+    - name: Request stopping an existing service after its log and manifest vanished
+      when: not podman_systemd_stopped_fixture.stat.exists
+      block:
+        - name: Stop the isolated loaded service without opening either missing file
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_action: stopped
+            podman_systemd_unit_name: missing-log-stop-fixture
+            podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-pod.yml"
+            podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+            podman_systemd_scope: user
+            podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
+        - name: Require the real Ansible systemd module to have issued the stop
+          ansible.builtin.assert:
+            that: >-
+              'stop missing-log-stop-fixture.service'
+              in lookup('ansible.builtin.file', podman_systemd_test_log)
+        - name: Record the observed stop command for this synthetic service
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
+            content: "stop requested through the isolated systemctl fixture\n"
+            mode: "0600"

@@ -68,3 +68,9 @@ MIT
 ## Author
 
 Lightning IT
+
+The prepared destination must be writable in the same effective identity used
+by this role to manage Podman; validation runs before Quadlet rendering or a
+restart. Stopping or removing a unit does not require the log file or manifest
+to remain present. Optional path syntax always rejects control characters,
+including a trailing newline.
