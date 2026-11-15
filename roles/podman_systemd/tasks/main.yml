@@ -99,8 +99,8 @@
   register: podman_systemd_removal_result
   changed_when: false
   when:
-    - podman_systemd_action == 'absent'
-    - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_action == 'stopped' or podman_systemd_removal_load.stdout | trim == 'loaded'
     - not ansible_check_mode
   tags:
     - podman_systemd
@@ -118,8 +118,8 @@
       recover the failed service and pod, and retry removal only after a successful stop.
     quiet: true
   when:
-    - podman_systemd_action == 'absent'
-    - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_action == 'stopped' or podman_systemd_removal_load.stdout | trim == 'loaded'
     - not ansible_check_mode
   tags:
     - podman_systemd

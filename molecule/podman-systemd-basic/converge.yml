@@ -64,6 +64,17 @@
               fi
               touch "{{ podman_systemd_test_root }}/teardown-stopped"
               ;;
+            *" show missing-log-stop-fixture.service "*)
+              printf '%s\n' 'LoadState=loaded' 'Result=success' 'UnitFileState=enabled'
+              if test -f "{{ podman_systemd_test_root }}/missing-log-stopped"; then
+                printf '%s\n' 'ActiveState=inactive' 'SubState=dead'
+              else
+                printf '%s\n' 'ActiveState=active' 'SubState=running'
+              fi
+              ;;
+            *" stop missing-log-stop-fixture.service "*)
+              touch "{{ podman_systemd_test_root }}/missing-log-stopped"
+              ;;
             *" show "*)
               printf '%s\n' 'LoadState=loaded'
               printf '%s\n' 'ActiveState=active'
@@ -495,6 +506,22 @@
             dest: "{{ podman_systemd_test_root }}/teardown-bad-result"
             content: "result fixture\n"
             mode: "0600"
+
+        - name: Require a failed result to reject an explicit stopped request
+          block:
+            - name: Stop through the actual role with an unconfirmed service result
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+              vars:
+                podman_systemd_action: stopped
+            - name: Fail if a failed teardown was reported as a successful stop
+              ansible.builtin.fail:
+                msg: FAILED_STOP_RESULT_WAS_ACCEPTED
+          rescue:
+            - name: Require the actual post-stop state guard to reject the request
+              ansible.builtin.assert:
+                that: >-
+                  ansible_failed_task.name == 'Require successful Podman kube service teardown before Quadlet removal'
 
         - name: Require a failed unit result to abort removal
           block:

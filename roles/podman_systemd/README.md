@@ -50,7 +50,9 @@ stop command still needs that source. A native-log `stopped` request checks this
 prerequisite before rendering the Quadlet or reloading systemd; restore a missing
 manifest before retrying. An `absent` request tolerates only a proven missing
 systemd unit. A loaded unit must stop successfully and report inactive/success
-before its Quadlet can be removed; stop errors and a failed service result keep
+before its Quadlet can be removed. Explicit `stopped` requests require the same
+post-stop state proof; a failed teardown cannot be reported as a successful stop.
+Stop errors and a failed service result keep
 the Quadlet for recovery. Restore the manifest and recover/reset the failed
 service as appropriate before retrying. Check mode cannot prove a future stop.
 Optional path syntax always rejects control characters,
