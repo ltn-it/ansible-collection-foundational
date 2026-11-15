@@ -79,6 +79,18 @@
   tags:
     - podman_systemd
 
+- name: Require the teardown manifest before removing a loaded native-log service
+  ansible.builtin.command:
+    argv: [/usr/bin/test, -f, "{{ podman_systemd_manifest_path }}", -a, -r, "{{ podman_systemd_manifest_path }}"]
+  changed_when: false
+  check_mode: false
+  when:
+    - podman_systemd_action == 'absent'
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+  tags:
+    - podman_systemd
+
 - name: Stop and disable Podman kube service
   ansible.builtin.systemd:
     name: "{{ podman_systemd_service_name }}"

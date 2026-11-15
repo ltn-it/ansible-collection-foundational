@@ -49,7 +49,9 @@ present. Keep the manifest readable until teardown completes: Podman's generated
 stop command still needs that source. A native-log `stopped` request checks this
 prerequisite before rendering the Quadlet or reloading systemd; restore a missing
 manifest before retrying. An `absent` request tolerates only a proven missing
-systemd unit. A loaded unit must stop successfully and report inactive/success
+systemd unit. A loaded native-log unit also requires the readable manifest before
+any removal stop or disable; a proven missing unit does not. A loaded unit must
+stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same
 post-stop state proof; a failed teardown cannot be reported as a successful stop.
 Stop errors and a failed service result keep

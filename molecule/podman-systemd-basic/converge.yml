@@ -465,12 +465,47 @@
         podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
         podman_systemd_scope: user
         podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+        podman_systemd_log_path: "{{ podman_systemd_test_root }}/missing.log"
       block:
         - name: Create the synthetic existing Quadlet
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube"
             content: "[Kube]\nYaml={{ podman_systemd_test_manifest }}\n"
             mode: "0644"
+
+        - name: Record service calls before an invalid loaded-unit removal request
+          ansible.builtin.set_fact:
+            podman_systemd_removal_calls_before: >-
+              {{ lookup('ansible.builtin.file', podman_systemd_test_log).splitlines() | length }}
+
+        - name: Reject a missing manifest before stopping or disabling a loaded unit
+          block:
+            - name: Attempt loaded-unit removal without the teardown manifest
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+              vars:
+                podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-manifest.yml"
+            - name: Fail if removal continued without its teardown source
+              ansible.builtin.fail:
+                msg: REMOVAL_WITHOUT_MANIFEST_ACCEPTED
+          rescue:
+            - name: Require the loaded-unit prerequisite to reject removal
+              ansible.builtin.assert:
+                that: >-
+                  ansible_failed_task.name ==
+                  'Require the teardown manifest before removing a loaded native-log service'
+
+        - name: Require the rejected removal to preserve the Quadlet and avoid service mutation
+          ansible.builtin.assert:
+            that:
+              - >-
+                lookup('ansible.builtin.file', podman_systemd_test_log).splitlines()
+                [podman_systemd_removal_calls_before | int:]
+                | select('search', '(^|\s)(stop|disable|daemon-reload)(\s|$)') | list | length == 0
+              - >-
+                lookup('ansible.builtin.file',
+                       podman_systemd_test_quadlet_dir ~ '/teardown-fixture.kube', rstrip=false) ==
+                '[Kube]\nYaml=' ~ podman_systemd_test_manifest ~ '\n'
 
         - name: Inject a systemctl stop failure
           ansible.builtin.copy:
@@ -565,6 +600,8 @@
         - name: Repeat removal with a proven missing systemd unit
           ansible.builtin.include_role:
             name: lit.foundational.podman_systemd
+          vars:
+            podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-manifest.yml"
 
         - name: Record the observed teardown contract
           ansible.builtin.copy:
