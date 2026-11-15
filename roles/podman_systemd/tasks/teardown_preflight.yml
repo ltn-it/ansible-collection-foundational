@@ -72,8 +72,8 @@
                 return files[0]
             starts=commands('ExecStart')
             native=[(argv,ignored) for binary,argv,ignored in starts if podman_kube(binary,argv,'play')]
+            require(len(starts)==1 and len(native)==1 and not native[0][1])
             if native:
-                require(len(native)==1 and not native[0][1])
                 drivers=option_values(native[0][0],'--log-driver')
                 require(len(drivers)<=1)
                 if any(item.startswith('path=') for item in option_values(native[0][0],'--log-opt')):

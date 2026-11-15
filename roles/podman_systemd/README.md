@@ -59,8 +59,13 @@ exactly one manifest, including services using Podman's default logging without
 an explicit log path. Role-generated logging/network options and trailing
 boolean options are parsed explicitly; additional manifests or unsupported
 loaded options require operator reconciliation before a stop or removal.
-An `absent` request tolerates a proven
-missing systemd unit without a manifest. A loaded unit must
+The loaded start must be one directly invoked Podman kube play command;
+wrappers and unrecognized executables are rejected rather than exempted.
+An `absent` request tolerates a missing systemd unit without a manifest only
+when the manager also proves it inactive. `LoadState=not-found` alone is
+insufficient: a running service can outlive its unit fragment. Restore its
+original definition and teardown source before retrying in that state.
+A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same
 post-stop state proof; a failed teardown cannot be reported as a successful stop.

@@ -1,4 +1,6 @@
 ---
 bugfixes:
   - podman_systemd - Reject trailing-newline log paths and verify effective write access before changing a unit.
-  - podman_systemd - Permit stopping an existing service when its prepared log file or manifest is missing.
+  - podman_systemd - Permit stopping an existing service when its prepared log file is missing; native teardown still requires its loaded manifest.
+  - podman_systemd - Reject removal or stop requests for an active unit whose fragment is unavailable, retaining recovery inputs until teardown can be verified.
+  - podman_systemd - Reject wrapped or unrecognized loaded start commands before teardown instead of treating them as exempt from manifest validation.

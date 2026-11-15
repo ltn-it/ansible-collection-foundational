@@ -683,6 +683,47 @@
           vars:
             podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/missing-manifest.yml"
 
+        - name: Simulate a missing fragment whose service is still active
+          ansible.builtin.file:
+            path: "{{ podman_systemd_test_root }}/teardown-stopped"
+            state: absent
+
+        - name: Retain a recovery Quadlet for the active missing-fragment test
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube"
+            content: "recovery definition must remain\n"
+            mode: "0600"
+
+        - name: Reject removal of an active service with an unavailable fragment
+          block:
+            - name: Request absent while the fragment is not found but the unit is active
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+            - name: Reject an accepted active missing-fragment removal
+              ansible.builtin.fail:
+                msg: Active missing-fragment removal was accepted.
+          rescue:
+            - name: Require the missing-fragment activity guard
+              ansible.builtin.assert:
+                that: >-
+                  ansible_failed_task.name ==
+                  'Require an inactive service when its loaded fragment is unavailable'
+
+        - name: Require the recovery Quadlet to remain after rejection
+          ansible.builtin.command:
+            argv: [/usr/bin/test, -f, '{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube']
+          changed_when: false
+
+        - name: Recover the isolated inactive fixture state
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/teardown-stopped"
+            content: "inactive after explicit fixture recovery\n"
+            mode: "0600"
+
+        - name: Remove the recovered inactive fixture through the role
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+
         - name: Record the observed teardown contract
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_root }}/teardown-proven"

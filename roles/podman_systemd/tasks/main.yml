@@ -17,6 +17,35 @@
   when: podman_systemd_action in ['stopped', 'absent']
   tags: podman_systemd
 
+- name: Read activity when the Podman kube unit fragment is unavailable
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
+         ['show', podman_systemd_service_name, '--property=LoadState,ActiveState'] }}
+  register: podman_systemd_missing_fragment_state
+  changed_when: false
+  check_mode: false
+  failed_when: podman_systemd_missing_fragment_state.rc not in [0, 4]
+  when:
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_removal_load.stdout | trim == 'not-found'
+  tags: podman_systemd
+
+- name: Require an inactive service when its loaded fragment is unavailable
+  ansible.builtin.assert:
+    that:
+      - "'LoadState=not-found' in podman_systemd_missing_fragment_state.stdout_lines"
+      - "'ActiveState=inactive' in podman_systemd_missing_fragment_state.stdout_lines"
+    quiet: true
+    fail_msg: >-
+      A missing unit fragment does not prove that its service has stopped.
+      Restore the original Quadlet and its loaded teardown manifest, reconcile
+      the manager, and verify teardown before removing the definition.
+  when:
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_removal_load.stdout | trim == 'not-found'
+  tags: podman_systemd
+
 - name: Validate the actual loaded native teardown configuration
   ansible.builtin.include_tasks:
     file: teardown_preflight.yml
