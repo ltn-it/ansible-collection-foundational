@@ -34,6 +34,36 @@
             *" --version "*)
               printf '%s\n' 'systemd 252 (252-46.el9)'
               ;;
+            *" show teardown-fixture.service "*)
+              if test -f "{{ podman_systemd_test_root }}/teardown-gone"; then
+                load=not-found
+              else
+                load=loaded
+              fi
+              case " $* " in
+                *" --value "*) printf '%s\n' "$load" ;;
+                *)
+                  printf 'LoadState=%s\n' "$load"
+                  if test -f "{{ podman_systemd_test_root }}/teardown-stopped"; then
+                    printf '%s\n' 'ActiveState=inactive'
+                  else
+                    printf '%s\n' 'ActiveState=active'
+                  fi
+                  if test -f "{{ podman_systemd_test_root }}/teardown-bad-result"; then
+                    printf '%s\n' 'Result=exit-code'
+                  else
+                    printf '%s\n' 'Result=success'
+                  fi
+                  printf '%s\n' 'UnitFileState=disabled' 'SubState=dead'
+                  ;;
+              esac
+              ;;
+            *" stop teardown-fixture.service "*)
+              if test -f "{{ podman_systemd_test_root }}/teardown-fail-stop"; then
+                exit 77
+              fi
+              touch "{{ podman_systemd_test_root }}/teardown-stopped"
+              ;;
             *" show "*)
               printf '%s\n' 'LoadState=loaded'
               printf '%s\n' 'ActiveState=active'
@@ -409,6 +439,110 @@
           ansible.builtin.copy:
             dest: "{{ podman_systemd_test_root }}/missing-log-stop-proven"
             content: "stop requested through the isolated systemctl fixture\n"
+            mode: "0600"
+
+    - name: Inspect the once-only confirmed-teardown fixture marker
+      ansible.builtin.stat:
+        path: "{{ podman_systemd_test_root }}/teardown-proven"
+      register: podman_systemd_teardown_fixture
+
+    - name: Verify teardown failure preserves the Quadlet before successful and absent-unit removal
+      when: not podman_systemd_teardown_fixture.stat.exists
+      vars:
+        podman_systemd_action: absent
+        podman_systemd_unit_name: teardown-fixture
+        podman_systemd_manifest_path: "{{ podman_systemd_test_manifest }}"
+        podman_systemd_scope: user
+        podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+      block:
+        - name: Create the synthetic existing Quadlet
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube"
+            content: "[Kube]\nYaml={{ podman_systemd_test_manifest }}\n"
+            mode: "0644"
+
+        - name: Inject a systemctl stop failure
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/teardown-fail-stop"
+            content: "failure fixture\n"
+            mode: "0600"
+
+        - name: Require a stop-command error to abort removal
+          block:
+            - name: Attempt removal through the actual role with a failed stop
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+            - name: Fail if a stop-command error was suppressed
+              ansible.builtin.fail:
+                msg: STOP_ERROR_WAS_SUPPRESSED
+          rescue:
+            - name: Require rejection at the actual systemd stop task
+              ansible.builtin.assert:
+                that: ansible_failed_task.name == 'Stop and disable Podman kube service'
+
+        - name: Require the Quadlet after a stop-command error
+          ansible.builtin.command:
+            argv: [/usr/bin/test, -f, '{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube']
+          changed_when: false
+
+        - name: Remove only the injected command failure
+          ansible.builtin.file:
+            path: "{{ podman_systemd_test_root }}/teardown-fail-stop"
+            state: absent
+
+        - name: Inject a failed teardown result despite a successful stop command
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/teardown-bad-result"
+            content: "result fixture\n"
+            mode: "0600"
+
+        - name: Require a failed unit result to abort removal
+          block:
+            - name: Attempt removal through the actual role with an unconfirmed result
+              ansible.builtin.include_role:
+                name: lit.foundational.podman_systemd
+            - name: Fail if a failed unit result was accepted
+              ansible.builtin.fail:
+                msg: FAILED_RESULT_WAS_ACCEPTED
+          rescue:
+            - name: Require rejection at the post-stop state guard
+              ansible.builtin.assert:
+                that: >-
+                  ansible_failed_task.name == 'Require successful Podman kube service teardown before Quadlet removal'
+
+        - name: Require the Quadlet after a failed teardown result
+          ansible.builtin.command:
+            argv: [/usr/bin/test, -f, '{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube']
+          changed_when: false
+
+        - name: Recover only the injected failed result
+          ansible.builtin.file:
+            path: "{{ podman_systemd_test_root }}/teardown-bad-result"
+            state: absent
+
+        - name: Remove the fixture only after its confirmed successful teardown
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+
+        - name: Require the successfully removed Quadlet
+          ansible.builtin.command:
+            argv: [/usr/bin/test, '!', -e, '{{ podman_systemd_test_quadlet_dir }}/teardown-fixture.kube']
+          changed_when: false
+
+        - name: Mark this synthetic unit as absent
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/teardown-gone"
+            content: "not found fixture\n"
+            mode: "0600"
+
+        - name: Repeat removal with a proven missing systemd unit
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+
+        - name: Record the observed teardown contract
+          ansible.builtin.copy:
+            dest: "{{ podman_systemd_test_root }}/teardown-proven"
+            content: "stop error and failed result retained Quadlet; successful and missing-unit removal completed\n"
             mode: "0600"
 
 - name: Validate native logging with configured and automatic interpreters without play facts

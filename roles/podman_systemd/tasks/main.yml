@@ -64,14 +64,63 @@
   tags:
     - podman_systemd
 
+- name: Read the Podman kube service load state before removal
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
+         ['show', podman_systemd_service_name, '--property=LoadState', '--value'] }}
+  register: podman_systemd_removal_load
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    podman_systemd_removal_load.rc != 0 or
+    podman_systemd_removal_load.stdout | trim not in ['loaded', 'not-found']
+  when: podman_systemd_action == 'absent'
+  tags:
+    - podman_systemd
+
 - name: Stop and disable Podman kube service
   ansible.builtin.systemd:
     name: "{{ podman_systemd_service_name }}"
     state: stopped
     enabled: false
     scope: "{{ podman_systemd_scope }}"
-  failed_when: false
-  when: podman_systemd_action == 'absent'
+  when:
+    - podman_systemd_action == 'absent'
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+  tags:
+    - podman_systemd
+
+- name: Verify the Podman kube service state after teardown
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
+         ['show', podman_systemd_service_name, '--property=LoadState,ActiveState,Result'] }}
+  register: podman_systemd_removal_result
+  changed_when: false
+  when:
+    - podman_systemd_action == 'absent'
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - not ansible_check_mode
+  tags:
+    - podman_systemd
+
+- name: Require successful Podman kube service teardown before Quadlet removal
+  ansible.builtin.assert:
+    that:
+      - >-
+        'LoadState=not-found' in podman_systemd_removal_result.stdout_lines or
+        ('LoadState=loaded' in podman_systemd_removal_result.stdout_lines and
+         'ActiveState=inactive' in podman_systemd_removal_result.stdout_lines and
+         'Result=success' in podman_systemd_removal_result.stdout_lines)
+    fail_msg: >-
+      Podman kube teardown is unconfirmed. Keep the Quadlet and manifest,
+      recover the failed service and pod, and retry removal only after a successful stop.
+    quiet: true
+  when:
+    - podman_systemd_action == 'absent'
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - not ansible_check_mode
   tags:
     - podman_systemd
 
