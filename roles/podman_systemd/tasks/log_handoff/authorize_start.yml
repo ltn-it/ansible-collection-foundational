@@ -41,3 +41,14 @@
     chdir: '{{ podman_systemd_h_home }}'
   changed_when: false
   loop: '{{ podman_systemd_h_names }}'
+- name: Require all original Pod identities and names absent before any replacement starts
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: absent
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item

@@ -12,10 +12,12 @@
         group: root
         mode: '0600'
         content: >-
-          {{ {'version': 1, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
+          {{ {'version': 2, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
           'proofs': podman_systemd_h_verified, 'holds_removed': false} | to_nice_json }}
       when: not podman_systemd_h_completed_stat.stat.exists
     - name: Inspect only original retained directories selected for finalization
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
       ansible.builtin.stat:
         path: >-
           {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
@@ -32,6 +34,8 @@
         quiet: true
       loop: '{{ podman_systemd_h_cleanup_directories.results }}'
     - name: Inspect only the retained source file in each original directory
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
       ansible.builtin.stat:
         path: >-
           {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}/held.log
@@ -49,6 +53,8 @@
         quiet: true
       loop: '{{ podman_systemd_h_cleanup_files.results }}'
     - name: Unlink only the known retained source
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
       ansible.builtin.file:
         path: >-
           {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}/held.log
@@ -73,5 +79,5 @@
         group: root
         mode: '0600'
         content: >-
-          {{ {'version': 1, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
+          {{ {'version': 2, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
           'proofs': podman_systemd_h_verified, 'holds_removed': true} | to_nice_json }}

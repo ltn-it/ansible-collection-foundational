@@ -30,7 +30,7 @@
 - name: Bind the complete trusted profile and source set
   ansible.builtin.assert:
     that:
-      - podman_systemd_h_journal.version == 1
+      - podman_systemd_h_journal.version == 2
       - podman_systemd_h_journal.hostname == podman_systemd_log_handoff_profile.hostname
       - >-
         podman_systemd_h_journal.profile_sha256 == podman_systemd_log_handoff_profile | to_json(sort_keys=True)
@@ -45,6 +45,12 @@
       - podman_systemd_h_record.id is match('^[0-9a-f]{64}\Z')
       - podman_systemd_h_record.conmon is match('^[0-9]+\Z')
       - podman_systemd_h_record.start is match('^[0-9]+\Z')
+      - podman_systemd_h_record.pod_id is match('^[0-9a-f]{64}\Z')
+      - podman_systemd_h_record.pod_name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*\Z')
+      - podman_systemd_h_record.infra_id is string
+      - >-
+        podman_systemd_h_record.infra_id == '' or
+        podman_systemd_h_record.infra_id is match('^[0-9a-f]{64}\Z')
       - podman_systemd_h_record.source_inode is integer
       - podman_systemd_h_record.source_inode > 0
       - podman_systemd_h_record.source_dev is integer

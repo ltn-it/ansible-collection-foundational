@@ -5,6 +5,14 @@
     podman_systemd_h_old_log: '{{ podman_systemd_h_saved[podman_systemd_h_name].log }}'
     podman_systemd_h_old_conmon: '{{ podman_systemd_h_saved[podman_systemd_h_name].conmon }}'
     podman_systemd_h_old_start: "{{ {'stdout': podman_systemd_h_saved[podman_systemd_h_name].start} }}"
+- name: Recheck the exact original Pod immediately before this component teardown
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: resume
 - name: Stop the original loaded definition through the packaged LIT role
   ansible.builtin.include_role:
     name: lit.foundational.podman_systemd
@@ -40,6 +48,8 @@
   retries: 20
   delay: 1
 - name: Confirm old userdata is gone and the held file has one link
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ item }}'
     checksum_algorithm: sha256
@@ -71,11 +81,15 @@
     remote_src: true
     mode: '0600'
 - name: Restore only the configured destination label after atomic copy
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.file:
     path: '{{ podman_systemd_h_log }}'
     setype: '{{ podman_systemd_log_handoff_setype }}'
   when: podman_systemd_log_handoff_setype | length > 0
 - name: Verify byte-for-byte transfer before starting a new writer
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ podman_systemd_h_log }}'
     checksum_algorithm: sha256

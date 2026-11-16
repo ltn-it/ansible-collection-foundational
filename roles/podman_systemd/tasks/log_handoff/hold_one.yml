@@ -1,5 +1,7 @@
 ---
 - name: Recheck the current source and holding file before adopting or creating a hold
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ item }}'
     follow: false

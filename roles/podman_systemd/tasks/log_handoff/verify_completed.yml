@@ -51,6 +51,14 @@
         [podman_systemd_h_completed.proofs[podman_systemd_h_name].container_id,
         'true', podman_systemd_h_log, podman_systemd_h_spec.unit ~ '.service']
     quiet: true
+- name: Recheck the recorded replacement Pod before continuing partial cleanup
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].container_id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: live
 - name: Restore the immutable completed proof without needing a removed hold
   ansible.builtin.set_fact:
     podman_systemd_h_verified: >-

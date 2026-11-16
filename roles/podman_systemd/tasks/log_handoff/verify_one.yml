@@ -60,8 +60,23 @@
       - podman_systemd_h_new_writer.stdout.split()[2] == podman_systemd_h_log
       - podman_systemd_h_new_writer.stdout.split()[3] == podman_systemd_h_spec.unit ~ '.service'
     quiet: true
+- name: Verify the complete replacement Pod against the original reviewed Pod name
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_new_writer.stdout.split()[0] }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: ''
+    podman_systemd_h_infra_expected: ''
+    podman_systemd_h_pod_mode: live
+- name: Require an actual new Pod rather than reusing the removed original
+  ansible.builtin.assert:
+    that: (podman_systemd_h_live_pod.stdout | from_json).pod_id != podman_systemd_h_saved[podman_systemd_h_name].pod_id
+    quiet: true
 - name: Record actual preserved and appended byte counts
   ansible.builtin.set_fact:
     podman_systemd_h_verified: >-
       {{ podman_systemd_h_verified | combine({podman_systemd_h_name: (podman_systemd_h_preserved.stdout | from_json)
-      | combine({'container_id': podman_systemd_h_new_writer.stdout.split()[0]})}) }}
+      | combine({'container_id': podman_systemd_h_new_writer.stdout.split()[0],
+      'pod_id': (podman_systemd_h_live_pod.stdout | from_json).pod_id,
+      'pod_name': (podman_systemd_h_live_pod.stdout | from_json).pod_name,
+      'infra_id': (podman_systemd_h_live_pod.stdout | from_json).infra_id})}) }}

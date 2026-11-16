@@ -29,6 +29,8 @@
       - podman_systemd_h_current.stdout.split()[4] == podman_systemd_h_spec.unit ~ '.service'
     quiet: true
 - name: Read the live native source and original manifest and definition
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ item }}'
     follow: false
@@ -58,6 +60,8 @@
       - podman_systemd_h_source_stats.results[2].stat.nlink == 1
     quiet: true
 - name: Hash only the immutable original definition files
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ item }}'
     follow: false
@@ -94,12 +98,25 @@
     chdir: '{{ podman_systemd_h_home }}'
   register: podman_systemd_h_old_start
   changed_when: false
+- name: Bind the actual Pod and its complete member set to the original named manifest
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_current.stdout.split()[0] }}'
+    podman_systemd_h_pod_name: >-
+      {{ (podman_systemd_log_manifest.content | b64decode | from_yaml_all | list)[0].metadata.name }}
+    podman_systemd_h_pod_expected: ''
+    podman_systemd_h_infra_expected: ''
+    podman_systemd_h_pod_mode: live
 - name: Assemble only nonsecret planned source identities
   ansible.builtin.set_fact:
     podman_systemd_h_saved: >-
       {{ podman_systemd_h_saved | combine({podman_systemd_h_name: {'id': podman_systemd_h_current.stdout.split()[0],
       'conmon': podman_systemd_h_current.stdout.split()[2], 'log': podman_systemd_h_current.stdout.split()[3],
-      'start': podman_systemd_h_old_start.stdout, 'source_inode': podman_systemd_h_source_stats.results[0].stat.inode,
+      'start': podman_systemd_h_old_start.stdout,
+      'pod_id': (podman_systemd_h_live_pod.stdout | from_json).pod_id,
+      'pod_name': (podman_systemd_h_live_pod.stdout | from_json).pod_name,
+      'infra_id': (podman_systemd_h_live_pod.stdout | from_json).infra_id,
+      'source_inode': podman_systemd_h_source_stats.results[0].stat.inode,
       'source_dev': podman_systemd_h_source_stats.results[0].stat.dev, 'stage_inode':
       podman_systemd_h_source_stats.results[3].stat.inode,
       'manifest_sha256': podman_systemd_h_definition_hashes.results[0].stat.checksum, 'quadlet_sha256':

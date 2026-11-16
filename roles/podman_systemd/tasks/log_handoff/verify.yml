@@ -28,7 +28,7 @@
     - name: Require the original component set
       ansible.builtin.assert:
         that:
-          - podman_systemd_h_completed.version == 1
+          - podman_systemd_h_completed.version == 2
           - podman_systemd_h_completed.names == podman_systemd_h_names
           - podman_systemd_h_completed.proofs.keys() | list | sort == podman_systemd_h_names | sort
           - podman_systemd_h_completed.profile_sha256 == podman_systemd_h_journal.profile_sha256

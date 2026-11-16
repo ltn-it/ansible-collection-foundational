@@ -122,8 +122,9 @@ separately for the read-only manager inspection; they skip active-log prechecks.
 Changing `podman_systemd_log_path` alone does not preserve a Podman graph log when
 `kube down` removes its container. The optional `tasks_from: log_handoff`
 entrypoint handles this transition separately. It supports rootless user services
-and must run with root escalation for private metadata custody. Podman, process
-inspection and live hardlinks run as the configured runtime account. No helper,
+and must run with root escalation for private metadata custody. Source and
+destination inspection, hashing, copying, labels, hardlinks and unlinking run as
+the configured runtime account, as do Podman and process inspection. No helper,
 root reader, service, timer or log rotation program is installed by this entrypoint.
 
 Required inputs:
@@ -149,6 +150,20 @@ readable during stop/copy. Select the precise host, coordinate exclusive mainten
 with other operators and scheduled backups, and retain a verified data backup and
 application recovery procedure. The entrypoint does not manage backup scheduling,
 application configuration, startup, readiness or customer acceptance.
+
+The original manifest must name the actual live Pod. Only the selected running
+application and its optional native infrastructure container may be present.
+Planning binds the Pod name, ID and infrastructure identity; hold and copy
+recheck every live member before retaining a source or stopping any application.
+Each component is checked again immediately before its teardown. Startup requires
+both original Pod IDs and names to be absent; replacement verification and partial
+finalization also validate actual membership. An added, replaced or stopped
+member fails closed rather than removing an unlisted workload and its logs.
+
+Keep one exact collection revision throughout a handoff. Planned and completed
+records use version2 with the Pod bindings; earlier records are rejected without
+removing their holds. Preserve the corresponding original recovery procedure
+instead of replacing an unfinished plan during an upgrade.
 
 Run the phases in order, each through the same public entrypoint and exact profile:
 

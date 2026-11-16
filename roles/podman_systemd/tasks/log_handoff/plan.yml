@@ -9,6 +9,8 @@
     that: not podman_systemd_h_state_before.stat.exists
     quiet: true
 - name: Inspect planned holding directories before creating anything
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: >-
       {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
@@ -86,7 +88,7 @@
     group: root
     mode: '0600'
     content: >-
-      {{ {'version': 1, 'hostname': podman_systemd_log_handoff_profile.hostname, 'profile_sha256':
+      {{ {'version': 2, 'hostname': podman_systemd_log_handoff_profile.hostname, 'profile_sha256':
       podman_systemd_log_handoff_profile
       | to_json(sort_keys=True) | hash('sha256'), 'stop_order': podman_systemd_h_names, 'sources':
       podman_systemd_h_saved}

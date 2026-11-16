@@ -77,6 +77,8 @@
         podman_systemd_h_actual_graph.stdout | trim == podman_systemd_log_handoff_profile.graphroot
     quiet: true
 - name: Inspect the graph directory itself without following links
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ podman_systemd_log_handoff_profile.graphroot }}'
     follow: false

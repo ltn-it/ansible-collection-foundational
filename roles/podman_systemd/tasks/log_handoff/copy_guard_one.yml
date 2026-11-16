@@ -1,5 +1,7 @@
 ---
 - name: Read the held source and original definition and destination before any stop
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
   ansible.builtin.stat:
     path: '{{ item }}'
     follow: false
@@ -107,6 +109,14 @@
         and podman_systemd_h_guard_stats.results[5].stat.dev == podman_systemd_h_saved[podman_systemd_h_name].source_dev
         and podman_systemd_h_guard_stats.results[5].stat.nlink == 2)
     quiet: true
+- name: Recheck the original live Pod or prove its complete prior removal before any stop
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: resume
 - name: Require the same live process start before any stop
   become: true
   become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'

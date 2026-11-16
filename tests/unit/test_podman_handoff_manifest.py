@@ -1,6 +1,7 @@
 """Exercise the shipped original-source inspection with real manifest files in the EE."""
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import pwd
@@ -57,6 +58,16 @@ class HandoffManifestTests(unittest.TestCase):
                     if include:
                         task['ansible.builtin.import_tasks'] = str(
                             (ROOT / 'roles/podman_systemd/tasks/log_handoff' / include).resolve())
+                    if task.get('ansible.builtin.include_tasks') == 'live_pod.yml':
+                        # Native-engine membership is exercised separately. Keep
+                        # this test focused on the original manifest/file guards.
+                        live = root / 'live_pod.yml'
+                        live.write_text(yaml.safe_dump([dict(name='Synthetic external Pod metadata',
+                            **{'ansible.builtin.command': dict(argv=[sys.executable, '-c',
+                                'print(' + repr(json.dumps(dict(pod_id='b' * 64, pod_name='application',
+                                                               infra_id='c' * 64))) + ')']),
+                               'register': 'podman_systemd_h_live_pod', 'changed_when': False})]))
+                        task['ansible.builtin.include_tasks'] = str(live)
                 inspected = root / 'query.yml'
                 inspected.write_text(yaml.safe_dump(tasks, sort_keys=False))
                 marker = root / 'following-mutation'
