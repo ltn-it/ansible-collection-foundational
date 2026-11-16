@@ -1,0 +1,77 @@
+---
+- name: Inspect the root-owned planned state and directory
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ podman_systemd_h_state_dir }}'
+    - '{{ podman_systemd_h_state }}'
+  register: podman_systemd_h_state_stats
+- name: Require the exact private journal ownership before reading it
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_state_stats.results[0].stat.isdir
+      - not podman_systemd_h_state_stats.results[0].stat.islnk
+      - podman_systemd_h_state_stats.results[0].stat.uid == 0
+      - podman_systemd_h_state_stats.results[0].stat.mode == '0700'
+      - podman_systemd_h_state_stats.results[1].stat.isreg
+      - not podman_systemd_h_state_stats.results[1].stat.islnk
+      - podman_systemd_h_state_stats.results[1].stat.uid == 0
+      - podman_systemd_h_state_stats.results[1].stat.mode == '0600'
+      - podman_systemd_h_state_stats.results[1].stat.nlink == 1
+    quiet: true
+- name: Read the durable planned identities
+  ansible.builtin.slurp:
+    src: '{{ podman_systemd_h_state }}'
+  register: podman_systemd_h_state_raw
+- name: Decode only the data record
+  ansible.builtin.set_fact:
+    podman_systemd_h_journal: '{{ podman_systemd_h_state_raw.content | b64decode | from_json }}'
+- name: Bind the complete trusted profile and source set
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_journal.version == 1
+      - podman_systemd_h_journal.hostname == podman_systemd_log_handoff_profile.hostname
+      - >-
+        podman_systemd_h_journal.profile_sha256 == podman_systemd_log_handoff_profile | to_json(sort_keys=True)
+        | hash('sha256')
+      - podman_systemd_h_journal.sources.keys() | list | sort == podman_systemd_h_names | sort
+      - podman_systemd_h_journal.stop_order == podman_systemd_h_names
+    quiet: true
+- name: Validate each original source record from the root-owned plan
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_record is mapping
+      - podman_systemd_h_record.id is match('^[0-9a-f]{64}\Z')
+      - podman_systemd_h_record.conmon is match('^[0-9]+\Z')
+      - podman_systemd_h_record.start is match('^[0-9]+\Z')
+      - podman_systemd_h_record.source_inode is integer
+      - podman_systemd_h_record.source_inode > 0
+      - podman_systemd_h_record.source_dev is integer
+      - podman_systemd_h_record.stage_inode is integer
+      - podman_systemd_h_record.stage_inode > 0
+      - >-
+        podman_systemd_h_record.manifest_sha256 == podman_systemd_log_handoff_profile.components[item].manifest_sha256
+      - podman_systemd_h_record.quadlet_sha256 is match('^[0-9a-f]{64}\Z')
+      - >-
+        podman_systemd_h_record.log == podman_systemd_h_graph ~ '/overlay-containers/' ~ podman_systemd_h_record.id
+        ~ '/userdata/ctr.log'
+    quiet: true
+  vars:
+    podman_systemd_h_record: '{{ podman_systemd_h_journal.sources[item] }}'
+  loop: '{{ podman_systemd_h_names }}'
+- name: Detect completion before allowing another destructive transition phase
+  ansible.builtin.stat:
+    path: '{{ podman_systemd_h_state_dir }}/completed.json'
+    follow: false
+  register: podman_systemd_h_completion_guard
+- name: Preserve completed operations rather than copying over a new writer
+  ansible.builtin.assert:
+    that:
+      - >-
+        not podman_systemd_h_completion_guard.stat.exists or podman_systemd_log_handoff_action in ['verify',
+        'finalize']
+    quiet: true
+- name: Restore all planned source identities in a fresh controller
+  ansible.builtin.set_fact:
+    podman_systemd_h_saved: '{{ podman_systemd_h_journal.sources }}'

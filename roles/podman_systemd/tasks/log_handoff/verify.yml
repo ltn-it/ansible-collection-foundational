@@ -1,0 +1,41 @@
+---
+- name: Restore the complete durable plan
+  ansible.builtin.include_tasks: load.yml
+- name: Inspect the optional completed proof
+  ansible.builtin.stat:
+    path: '{{ podman_systemd_h_state_dir }}/completed.json'
+    follow: false
+  register: podman_systemd_h_completed_stat
+- name: Load the existing immutable completed record
+  when: podman_systemd_h_completed_stat.stat.exists
+  block:
+    - name: Require private single-link completed metadata
+      ansible.builtin.assert:
+        that:
+          - podman_systemd_h_completed_stat.stat.isreg
+          - not podman_systemd_h_completed_stat.stat.islnk
+          - podman_systemd_h_completed_stat.stat.uid == 0
+          - podman_systemd_h_completed_stat.stat.mode == '0600'
+          - podman_systemd_h_completed_stat.stat.nlink == 1
+        quiet: true
+    - name: Read the completed record
+      ansible.builtin.slurp:
+        src: '{{ podman_systemd_h_state_dir }}/completed.json'
+      register: podman_systemd_h_completed_raw
+    - name: Decode only the completed data
+      ansible.builtin.set_fact:
+        podman_systemd_h_completed: '{{ podman_systemd_h_completed_raw.content | b64decode | from_json }}'
+    - name: Require the original component set
+      ansible.builtin.assert:
+        that:
+          - podman_systemd_h_completed.version == 1
+          - podman_systemd_h_completed.names == podman_systemd_h_names
+          - podman_systemd_h_completed.proofs.keys() | list | sort == podman_systemd_h_names | sort
+          - podman_systemd_h_completed.profile_sha256 == podman_systemd_h_journal.profile_sha256
+        quiet: true
+- name: Independently verify all old prefixes and new native unit identities
+  ansible.builtin.include_tasks: >-
+    {{ 'verify_completed.yml' if podman_systemd_h_completed_stat.stat.exists else 'verify_one.yml' }}
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item

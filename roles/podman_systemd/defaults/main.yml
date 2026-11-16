@@ -34,3 +34,11 @@ podman_systemd_networks: []
 # Optional stable native k8s-file destination. Requires a prepared regular file
 # and exactly one application container, without init containers, in one Pod.
 podman_systemd_log_path: ""
+
+# Optional explicit one-off native log handoff entrypoint (tasks_from: log_handoff).
+# Normal present/started/stopped actions never invoke it implicitly.
+podman_systemd_log_handoff_action: ""
+podman_systemd_log_handoff_operation: ""
+podman_systemd_log_handoff_profile: {}
+podman_systemd_log_handoff_stop_order: []
+podman_systemd_log_handoff_setype: ""

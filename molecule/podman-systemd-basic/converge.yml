@@ -780,3 +780,44 @@
           - >-
             podman_systemd_log_ancestry_check.cmd[0] ==
             podman_systemd_log_python.ansible_facts.ansible_python.executable
+
+    - name: Validate the explicit native handoff interface without target mutation
+      ansible.builtin.include_role:
+        name: lit.foundational.podman_systemd
+        tasks_from: log_handoff/assert
+      vars:
+        podman_systemd_log_handoff_action: plan
+        podman_systemd_log_handoff_operation: native-logs-1
+        podman_systemd_log_handoff_stop_order: [application]
+        podman_systemd_log_handoff_profile:
+          hostname: lab.example.com
+          runtime_user: application
+          runtime_uid: 23000
+          graphroot: /opt/podman/storage
+          components:
+            application:
+              container: application-main
+              unit: application
+              manifest: /opt/application/pod.yml
+              manifest_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              quadlet: /home/application/.config/containers/systemd/application.kube
+              destination: /var/log/podman/application.log
+
+    - name: Reject an unsafe handoff identifier before runtime or filesystem inspection
+      block:
+        - name: Attempt the public entrypoint with an invalid operation
+          ansible.builtin.include_role:
+            name: lit.foundational.podman_systemd
+            tasks_from: log_handoff
+          vars:
+            podman_systemd_log_handoff_action: plan
+            podman_systemd_log_handoff_operation: ../foreign
+
+        - name: Fail if invalid handoff inputs were accepted
+          ansible.builtin.fail:
+            msg: The handoff interface accepted path traversal.
+      rescue:
+        - name: Require the initial side-effect-free interface guard to reject the operation
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require an explicit executable phase and rootless profile'

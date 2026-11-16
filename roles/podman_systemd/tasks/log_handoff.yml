@@ -1,0 +1,146 @@
+---
+- name: Validate the explicitly selected native log handoff interface
+  ansible.builtin.import_tasks: log_handoff/assert.yml
+  tags: always
+
+- name: Resolve the actual executing interpreter for read-only handoff inspection
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!min'
+      - python
+    filter:
+      - ansible_python
+  register: podman_systemd_h_python
+
+- name: Read the runtime account from the target account database
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+
+- name: Read the actual target and effective execution identity
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import json,os,socket; print(json.dumps(dict(hostname=socket.gethostname(),uid=os.geteuid())))
+  changed_when: false
+  check_mode: false
+  register: podman_systemd_h_target
+
+- name: Require the bound host and root metadata custodian
+  ansible.builtin.assert:
+    that:
+      - >-
+        (podman_systemd_h_target.stdout | from_json).hostname == podman_systemd_log_handoff_profile.hostname
+      - (podman_systemd_h_target.stdout | from_json).uid == 0
+      - >-
+        ansible_facts.getent_passwd[podman_systemd_log_handoff_profile.runtime_user][1] | int ==
+        podman_systemd_log_handoff_profile.runtime_uid
+      - >-
+        ansible_facts.getent_passwd[podman_systemd_log_handoff_profile.runtime_user][4] is match('^/[A-Za-z0-9_./-]+\Z')
+    quiet: true
+
+- name: Derive operation paths without customer-specific defaults
+  ansible.builtin.set_fact:
+    podman_systemd_h_home: '{{ ansible_facts.getent_passwd[podman_systemd_log_handoff_profile.runtime_user][4]
+      }}'
+    podman_systemd_h_names: '{{ podman_systemd_log_handoff_stop_order }}'
+    podman_systemd_h_state_dir: /var/lib/lit-podman-log-handoff/{{ podman_systemd_log_handoff_operation }}
+    podman_systemd_h_saved: {}
+    podman_systemd_h_verified: {}
+    podman_systemd_h_copied: []
+    podman_systemd_h_completed: {}
+
+- name: Read the actual rootless Podman storage location
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  environment:
+    HOME: '{{ podman_systemd_h_home }}'
+    XDG_RUNTIME_DIR: /run/user/{{ podman_systemd_log_handoff_profile.runtime_uid }}
+    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/{{ podman_systemd_log_handoff_profile.runtime_uid }}/bus
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - info
+      - --format
+      - '{{ "{{.Store.GraphRoot}}" }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_actual_graph
+  changed_when: false
+  check_mode: false
+- name: Require the inventory graph to match the actual rootless runtime
+  ansible.builtin.assert:
+    that:
+      - >-
+        podman_systemd_h_actual_graph.stdout | trim == podman_systemd_log_handoff_profile.graphroot
+    quiet: true
+- name: Inspect the graph directory itself without following links
+  ansible.builtin.stat:
+    path: '{{ podman_systemd_log_handoff_profile.graphroot }}'
+    follow: false
+  register: podman_systemd_h_graph_stat
+- name: Require a private real graph directory
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_graph_stat.stat.isdir
+      - not podman_systemd_h_graph_stat.stat.islnk
+      - >-
+        podman_systemd_h_graph_stat.stat.uid in [0, podman_systemd_log_handoff_profile.runtime_uid]
+      - podman_systemd_h_graph_stat.stat.mode[-2] in ['0', '1', '4', '5']
+      - podman_systemd_h_graph_stat.stat.mode[-1] in ['0', '1', '4', '5']
+    quiet: true
+- name: Validate each manifest and native destination binding
+  ansible.builtin.include_tasks: log_handoff/assert_component.yml
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item
+
+- name: Inspect trusted ancestry without changing modes or following symlinks
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import json,os,pathlib,stat,sys
+        config=json.loads(sys.argv[1]);uid=config['runtime_uid']
+        paths=[config['graphroot'],sys.argv[2]]
+        for spec in config['components'].values():
+            paths.extend([spec['manifest'],spec['quadlet'],spec['destination']])
+        for target in paths:
+            path=pathlib.Path(target)
+            if str(path)!=target or not path.is_absolute() or '..' in path.parts:
+                raise RuntimeError('NONCANONICAL_HANDOFF_PATH')
+            for directory in reversed(path.parents):
+                try:
+                    meta=directory.lstat()
+                except FileNotFoundError:
+                    continue
+                owners={0} if target==sys.argv[2] else {0,uid}
+                if not stat.S_ISDIR(meta.st_mode) or meta.st_uid not in owners or meta.st_mode&0o022:
+                    raise RuntimeError('UNTRUSTED_HANDOFF_ANCESTRY')
+      - '{{ podman_systemd_log_handoff_profile | to_json }}'
+      - '{{ podman_systemd_h_state_dir }}/state.json'
+  changed_when: false
+  check_mode: false
+
+- name: Run only the explicitly selected transition phase
+  ansible.builtin.include_tasks:
+    file: log_handoff/{{ podman_systemd_log_handoff_action }}.yml
+    apply:
+      environment:
+        HOME: '{{ podman_systemd_h_home }}'
+        XDG_RUNTIME_DIR: /run/user/{{ podman_systemd_log_handoff_profile.runtime_uid }}
+        DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/{{ podman_systemd_log_handoff_profile.runtime_uid
+          }}/bus
+  vars:
+    podman_systemd_h_state: '{{ podman_systemd_h_state_dir }}/state.json'
+    podman_systemd_h_graph: '{{ podman_systemd_log_handoff_profile.graphroot }}'
+    podman_systemd_h_name: '{{ podman_systemd_h_item }}'
+    podman_systemd_h_spec: '{{ podman_systemd_log_handoff_profile.components[podman_systemd_h_name] }}'
+    podman_systemd_h_stage: >-
+      {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ podman_systemd_h_name
+      }}
+    podman_systemd_h_log: '{{ podman_systemd_h_spec.destination }}'
+    podman_systemd_h_unit_dir: '{{ podman_systemd_h_home }}/.config/containers/systemd'

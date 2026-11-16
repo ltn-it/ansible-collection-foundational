@@ -1,0 +1,8 @@
+---
+- name: Restore the complete durable plan
+  ansible.builtin.include_tasks: load.yml
+- name: Create or adopt exactly the planned holds
+  ansible.builtin.include_tasks: hold_one.yml
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item

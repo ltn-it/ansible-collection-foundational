@@ -107,6 +107,89 @@ It does not assume `/usr/bin/python3` or execute automatic-discovery tokens as
 program names. Loaded stopped/absent actions resolve the executing interpreter
 separately for the read-only manager inspection; they skip active-log prechecks.
 
+### Explicit one-off log history handoff
+
+Changing `podman_systemd_log_path` alone does not preserve a Podman graph log when
+`kube down` removes its container. The optional `tasks_from: log_handoff`
+entrypoint handles this transition separately. It supports rootless user services
+and must run with root escalation for private metadata custody. Podman, process
+inspection and live hardlinks run as the configured runtime account. No helper,
+root reader, service, timer or log rotation program is installed by this entrypoint.
+
+Required inputs:
+
+- `podman_systemd_log_handoff_action`: `plan`, `hold`, `copy`, `authorize_start`,
+  `verify`, or `finalize`. There is no implicit action and check mode is rejected.
+- `podman_systemd_log_handoff_operation`: a fresh lowercase operation identifier.
+- `podman_systemd_log_handoff_profile`: only `hostname`, `runtime_user`,
+  `runtime_uid`, `graphroot`, and `components`.
+- Each component contains only `container`, `unit` (without `.service`),
+  `manifest`, `manifest_sha256`, `quadlet`, and `destination`. Read and review these
+  nonsecret identities before the maintenance operation. Do not put manifest
+  contents, environments or passwords in this profile.
+- `podman_systemd_log_handoff_stop_order`: every component name exactly once,
+  in the consumer's dependency-safe stop order.
+- `podman_systemd_log_handoff_setype`: optional destination SELinux type. The
+  operating-system role remains responsible for persistent labeling policy.
+
+The caller prepares empty single-link mode-0600 destination files, owned by the
+runtime account, with trusted directory ancestry and enough free disk space for
+closed-file copies. The manifest and original Quadlet must remain unchanged and
+readable during stop/copy. Select the precise host, coordinate exclusive maintenance
+with other operators and scheduled backups, and retain a verified data backup and
+application recovery procedure. The entrypoint does not manage backup scheduling,
+application configuration, startup, readiness or customer acceptance.
+
+Run the phases in order, each through the same public entrypoint and exact profile:
+
+```yaml
+- name: Plan the reviewed native log transition
+  become: true
+  ansible.builtin.include_role:
+    name: lit.foundational.podman_systemd
+    tasks_from: log_handoff
+  vars:
+    podman_systemd_log_handoff_action: plan
+    podman_systemd_log_handoff_operation: native-logs-1
+    podman_systemd_log_handoff_profile: "{{ reviewed_native_log_profile }}"
+    podman_systemd_log_handoff_stop_order: "{{ reviewed_native_log_stop_order }}"
+    podman_systemd_log_handoff_setype: container_log_t
+```
+
+`plan` binds every running native `graphRoot/overlay-containers/<id>/userdata/ctr.log`,
+container/unit label, process start and source/holding-directory inode. It writes
+root-only mode-0600 JSON under
+`/var/lib/lit-podman-log-handoff/<operation>/` before any live hardlink is made.
+A preexisting plan is not overwritten. `hold` creates or adopts exactly these
+same-filesystem links in private runtime-owned directories below the graph root;
+an interrupted or repeated `hold` can resume with the original profile.
+
+`copy` first checks **all** holds, destinations, current writers, original
+manifest/Quadlet hashes and loaded native stop commands before stopping any
+application. It stops through the ordinary role and copies only after the old
+writer identity and userdata path are gone. A nonempty destination is accepted
+only as an exact prior closed copy while its old container is absent. A fresh
+controller can resume after a completed component copy. Unexpected files or
+identities fail without guessing a recovery action.
+
+`authorize_start` independently checks every closed old prefix before the consumer
+runs its normal setup roles with stable native destinations. This phase does not
+start applications. After normal startup and application checks, `verify` checks
+replacement container IDs, actual destinations/unit labels and the entire old
+prefix. Quiet applications need not emit a synthetic log line. `finalize` repeats
+verification, commits complete prefix hashes and replacement IDs before removing
+any known hold, then removes only known source links and empty original holding
+directories. It can resume after interrupted cleanup using the root-owned completed
+record. The small root metadata records remain available for the operator's audit;
+no application data backups are removed. Do not rotate or truncate the new files
+before prefix verification/finalization completes.
+
+This is a one-off migration contract, not the recurring application setup path.
+Completed operations reject new `hold` or `copy` phases. After later container
+replacement or log rotation, the historic prefix check is no longer an appropriate
+ongoing health check. Configure RPM Logrotate separately and use the normal
+application/backup acceptance checks for steady-state operations.
+
 ## Dependencies
 
 None.

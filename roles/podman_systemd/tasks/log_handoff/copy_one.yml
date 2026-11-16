@@ -1,0 +1,90 @@
+---
+- name: Restore the retained identity for this application
+  ansible.builtin.set_fact:
+    podman_systemd_h_old_id: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_old_log: '{{ podman_systemd_h_saved[podman_systemd_h_name].log }}'
+    podman_systemd_h_old_conmon: '{{ podman_systemd_h_saved[podman_systemd_h_name].conmon }}'
+    podman_systemd_h_old_start: "{{ {'stdout': podman_systemd_h_saved[podman_systemd_h_name].start} }}"
+- name: Stop the original loaded definition through the packaged LIT role
+  ansible.builtin.include_role:
+    name: lit.foundational.podman_systemd
+    apply:
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  vars:
+    podman_systemd_action: stopped
+    podman_systemd_teardown_expected_manifest: '{{ podman_systemd_h_spec.manifest }}'
+    podman_systemd_unit_name: '{{ podman_systemd_h_spec.unit }}'
+    podman_systemd_scope: user
+    podman_systemd_quadlet_dir: '{{ podman_systemd_h_unit_dir }}'
+- name: Wait until the old writer identity is gone
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import pathlib,sys
+        process=pathlib.Path("/proc/"+sys.argv[1]+"/stat")
+        try:
+            start=process.read_text().rsplit(")",1)[1].split()[19]
+        except FileNotFoundError:
+            sys.exit(0)
+        sys.exit(1 if start==sys.argv[2] else 0)
+      - '{{ podman_systemd_h_old_conmon }}'
+      - '{{ podman_systemd_h_old_start.stdout }}'
+  register: podman_systemd_h_writer_gone
+  changed_when: false
+  until: podman_systemd_h_writer_gone.rc == 0
+  retries: 20
+  delay: 1
+- name: Confirm old userdata is gone and the held file has one link
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    checksum_algorithm: sha256
+    get_mime: false
+  loop:
+    - '{{ podman_systemd_h_old_log }}'
+    - '{{ podman_systemd_h_stage }}/held.log'
+  register: podman_systemd_h_closed
+- name: Require a closed independently retained source
+  ansible.builtin.assert:
+    that:
+      - not podman_systemd_h_closed.results[0].stat.exists
+      - podman_systemd_h_closed.results[1].stat.isreg
+      - podman_systemd_h_closed.results[1].stat.nlink == 1
+      - >-
+        podman_systemd_h_closed.results[1].stat.uid == podman_systemd_log_handoff_profile.runtime_uid
+      - not podman_systemd_h_closed.results[1].stat.islnk
+      - >-
+        podman_systemd_h_closed.results[1].stat.inode == podman_systemd_h_saved[podman_systemd_h_name].source_inode
+      - >-
+        podman_systemd_h_closed.results[1].stat.dev == podman_systemd_h_saved[podman_systemd_h_name].source_dev
+    quiet: true
+- name: Copy the closed old content into the prepared new log
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.copy:
+    src: '{{ podman_systemd_h_stage }}/held.log'
+    dest: '{{ podman_systemd_h_log }}'
+    remote_src: true
+    mode: '0600'
+- name: Restore only the configured destination label after atomic copy
+  ansible.builtin.file:
+    path: '{{ podman_systemd_h_log }}'
+    setype: '{{ podman_systemd_log_handoff_setype }}'
+  when: podman_systemd_log_handoff_setype | length > 0
+- name: Verify byte-for-byte transfer before starting a new writer
+  ansible.builtin.stat:
+    path: '{{ podman_systemd_h_log }}'
+    checksum_algorithm: sha256
+    get_mime: false
+  register: podman_systemd_h_copied
+- name: Require the complete closed source bytes at the destination
+  ansible.builtin.assert:
+    that:
+      - >-
+        podman_systemd_h_copied.stat.checksum == podman_systemd_h_closed.results[1].stat.checksum
+      - podman_systemd_h_copied.stat.nlink == 1
+    quiet: true

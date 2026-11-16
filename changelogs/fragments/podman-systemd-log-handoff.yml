@@ -1,0 +1,11 @@
+---
+minor_changes:
+  - >-
+    podman_systemd - add an explicit one-off rootless native log handoff entrypoint
+    with durable source identities, all-source pre-stop checks, closed-file copying,
+    and prefix verification before retained files are finalized. It installs no
+    helper executable, logging service, timer, or rotation mechanism.
+bugfixes:
+  - >-
+    podman_systemd - allow a handoff caller to require that the actual loaded
+    native play/down commands reference its reviewed original manifest.

@@ -79,6 +79,8 @@
                 if any(item.startswith('path=') for item in option_values(native[0][0],'--log-opt')):
                     require(drivers==['k8s-file'])
                 source=manifest(native[0][0],'play')
+                if len(sys.argv)>3 and sys.argv[3]:
+                    require(source==sys.argv[3])
                 stops=commands('ExecStop')+commands('ExecStopPost')
                 downs=[(argv,ignored) for binary,argv,ignored in stops if podman_kube(binary,argv,'down')]
                 require(bool(downs) and len(downs)==len(stops) and all(not ignored for argv,ignored in downs))
@@ -90,6 +92,7 @@
         print(json.dumps(result,sort_keys=True))
       - "{{ podman_systemd_scope }}"
       - "{{ podman_systemd_service_name }}"
+      - "{{ podman_systemd_teardown_expected_manifest | default('') }}"
   changed_when: false
   check_mode: false
   no_log: true

@@ -20,7 +20,7 @@ class LoadedTeardownTests(unittest.TestCase):
               bad_signature=False, multiple=False, optimize=0, separate=False, ignored_stop=False,
               multiple_sources=False, trailing_flags=False, ignored_start=False, unsupported_flag=False,
               default_logging=False, wrapped_start=False, extra_wrapped_stop=False,
-              wrapped_post=False, duplicate_down=False):
+              wrapped_post=False, duplicate_down=False, expected_manifest=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         source = pathlib.Path(temporary.name) / 'pod.yml'
@@ -77,7 +77,10 @@ class LoadedTeardownTests(unittest.TestCase):
         command = next(task['ansible.builtin.command'] for task in tasks if 'ansible.builtin.command' in task)
         program = command['argv'][2]
         output = io.StringIO()
-        with mock.patch.object(sys, 'argv', ['fixture', 'user', 'fixture.service']), mock.patch.object(
+        arguments = ['fixture', 'user', 'fixture.service']
+        if expected_manifest is not None:
+            arguments.append(str(source) if expected_manifest == 'same' else expected_manifest)
+        with mock.patch.object(sys, 'argv', arguments), mock.patch.object(
             subprocess, 'run', side_effect=bus
         ), contextlib.redirect_stdout(output):
             exec(compile(program, 'packaged-loaded-guard', 'exec', optimize=optimize), {})  # noqa: S102 -- mocked OS calls.
@@ -87,6 +90,10 @@ class LoadedTeardownTests(unittest.TestCase):
         result, calls = self.probe()
         self.assertEqual(result, {'ok': True, 'native': True})
         self.assertEqual(calls, ['ExecStart', 'ExecStop', 'ExecStopPost'])
+
+    def test_explicit_handoff_manifest_must_match_the_actual_loaded_source(self):
+        self.assertTrue(self.probe(expected_manifest='same')[0]['ok'])
+        self.assertFalse(self.probe(expected_manifest='/private/different.yml')[0]['ok'])
 
     def test_rejects_missing_actual_source(self):
         result, _ = self.probe(missing=True)

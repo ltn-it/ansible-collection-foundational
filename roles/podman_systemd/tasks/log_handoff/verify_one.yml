@@ -1,0 +1,67 @@
+---
+- name: Verify preserved prefix and actual append by the new native writer
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import hashlib,json,pathlib,stat,sys
+        source=pathlib.Path(sys.argv[1]);target=pathlib.Path(sys.argv[2]);uid=int(sys.argv[3])
+        for path in [source,target]:
+            meta=path.lstat()
+            if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=uid or meta.st_nlink!=1:
+                raise RuntimeError('UNVERIFIED_SOURCE_OR_DESTINATION')
+        if source.lstat().st_ino!=int(sys.argv[4]) or source.lstat().st_dev!=int(sys.argv[5]):
+            raise RuntimeError('REPLACED_RETAINED_SOURCE')
+        digest=hashlib.sha256();count=0
+        with source.open('rb') as old,target.open('rb') as new:
+            for chunk in iter(lambda:old.read(1024*1024),b''):
+                if new.read(len(chunk))!=chunk:
+                    raise RuntimeError('PRESERVED_PREFIX_CHANGED')
+                count+=len(chunk);digest.update(chunk)
+        size=target.stat().st_size
+        print(json.dumps(dict(preserved_old_bytes=count,new_bytes=size,
+              new_writer_appends=size>count,old_sha256=digest.hexdigest())))
+      - '{{ podman_systemd_h_stage }}/held.log'
+      - '{{ podman_systemd_h_log }}'
+      - '{{ podman_systemd_log_handoff_profile.runtime_uid | string }}'
+      - '{{ podman_systemd_h_saved[podman_systemd_h_name].source_inode | string }}'
+      - '{{ podman_systemd_h_saved[podman_systemd_h_name].source_dev | string }}'
+  register: podman_systemd_h_preserved
+  changed_when: false
+  until: podman_systemd_h_preserved.rc == 0
+  retries: 10
+  delay: 1
+- name: Read the new writer identity and native unit label
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - inspect
+      - '{{ podman_systemd_h_spec.container }}'
+      - --format
+      - >-
+        {{ "{{.Id}} {{.State.Running}} {{.HostConfig.LogConfig.Path}} {{.Config.Labels.PODMAN_SYSTEMD_UNIT}}"
+        }}
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_new_writer
+  changed_when: false
+- name: Require a running replacement bound to the exact stable destination and unit
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_new_writer.stdout.split() | length == 4
+      - podman_systemd_h_new_writer.stdout.split()[0] is match('^[0-9a-f]{64}$')
+      - >-
+        podman_systemd_h_new_writer.stdout.split()[0] != podman_systemd_h_saved[podman_systemd_h_name].id
+      - podman_systemd_h_new_writer.stdout.split()[1] == 'true'
+      - podman_systemd_h_new_writer.stdout.split()[2] == podman_systemd_h_log
+      - podman_systemd_h_new_writer.stdout.split()[3] == podman_systemd_h_spec.unit ~ '.service'
+    quiet: true
+- name: Record actual preserved and appended byte counts
+  ansible.builtin.set_fact:
+    podman_systemd_h_verified: >-
+      {{ podman_systemd_h_verified | combine({podman_systemd_h_name: (podman_systemd_h_preserved.stdout | from_json)
+      | combine({'container_id': podman_systemd_h_new_writer.stdout.split()[0]})}) }}
