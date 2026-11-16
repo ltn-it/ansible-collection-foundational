@@ -7,3 +7,5 @@ bugfixes:
     retaining recovery inputs until teardown can be verified.
   - podman_systemd - Reject wrapped or unrecognized loaded start commands before teardown instead of
     treating them as exempt from manifest validation.
+  - podman_systemd - Validate every loaded stop and stop-post command before teardown; reject wrappers
+    or unrelated commands even when another verified native down command is present.

@@ -19,7 +19,8 @@ class LoadedTeardownTests(unittest.TestCase):
     def probe(self, *, missing=False, other_stop=False, no_stop=False, native=True,
               bad_signature=False, multiple=False, optimize=0, separate=False, ignored_stop=False,
               multiple_sources=False, trailing_flags=False, ignored_start=False, unsupported_flag=False,
-              default_logging=False, wrapped_start=False):
+              default_logging=False, wrapped_start=False, extra_wrapped_stop=False,
+              wrapped_post=False, duplicate_down=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         source = pathlib.Path(temporary.name) / 'pod.yml'
@@ -61,8 +62,12 @@ class LoadedTeardownTests(unittest.TestCase):
                 calls.append(property_name)
                 if property_name == 'ExecStart':
                     rows = [row(executable, start)] * (2 if multiple else 1)
+                elif property_name == 'ExecStop':
+                    rows = ([row('/usr/bin/env', ['/usr/bin/env'] + stop)] if extra_wrapped_stop
+                            else ([row('/usr/bin/podman', stop)] if wrapped_post or duplicate_down else []))
                 elif property_name == 'ExecStopPost' and not no_stop:
-                    rows = [row('/usr/bin/podman', stop)]
+                    rows = ([row('/usr/bin/env', ['/usr/bin/env'] + stop)] if wrapped_post
+                            else [row('/usr/bin/podman', stop)])
                 else:
                     rows = []
                 value = {'type': 'invalid' if bad_signature else 'a(sasbttttuii)', 'data': rows}
@@ -145,6 +150,18 @@ class LoadedTeardownTests(unittest.TestCase):
         result, calls = self.probe(wrapped_start=True, missing=True)
         self.assertFalse(result['ok'])
         self.assertEqual(calls, ['ExecStart'])
+
+    def test_extra_wrapped_stop_cannot_be_omitted_from_preflight(self):
+        result, _ = self.probe(extra_wrapped_stop=True)
+        self.assertFalse(result['ok'])
+
+    def test_wrapped_stop_post_cannot_hide_behind_a_verified_stop(self):
+        result, _ = self.probe(wrapped_post=True)
+        self.assertFalse(result['ok'])
+
+    def test_checks_all_native_down_commands_with_the_same_manifest(self):
+        result, _ = self.probe(duplicate_down=True)
+        self.assertEqual(result, {'ok': True, 'native': True})
 
     def test_unrecognized_bus_schema_fails_before_service_mutation(self):
         result, _ = self.probe(bad_signature=True)

@@ -61,6 +61,9 @@ boolean options are parsed explicitly; additional manifests or unsupported
 loaded options require operator reconciliation before a stop or removal.
 The loaded start must be one directly invoked Podman kube play command;
 wrappers and unrecognized executables are rejected rather than exempted.
+Every loaded ExecStop and ExecStopPost command must also be a directly invoked
+native down command for the verified manifest. A wrapped or unrelated stop
+cannot hide beside another verified down command.
 An `absent` request tolerates a missing systemd unit without a manifest only
 when the manager also proves it inactive. `LoadState=not-found` alone is
 insufficient: a running service can outlive its unit fragment. Restore its

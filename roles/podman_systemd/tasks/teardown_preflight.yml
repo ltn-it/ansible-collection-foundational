@@ -81,7 +81,7 @@
                 source=manifest(native[0][0],'play')
                 stops=commands('ExecStop')+commands('ExecStopPost')
                 downs=[(argv,ignored) for binary,argv,ignored in stops if podman_kube(binary,argv,'down')]
-                require(bool(downs) and all(not ignored for argv,ignored in downs))
+                require(bool(downs) and len(downs)==len(stops) and all(not ignored for argv,ignored in downs))
                 require({manifest(argv,'down') for argv,ignored in downs}=={source})
                 require(stat.S_ISREG(os.stat(source).st_mode) and os.access(source,os.R_OK))
             result={'ok':True,'native':bool(native)}
