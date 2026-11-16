@@ -46,6 +46,29 @@
     - podman_systemd_removal_load.stdout | trim == 'not-found'
   tags: podman_systemd
 
+- name: Read the current loaded Podman kube activity and result before teardown
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl'] + (['--user'] if podman_systemd_scope == 'user' else []) +
+         ['show', podman_systemd_service_name, '--property=LoadState,ActiveState,Result'] }}
+  register: podman_systemd_teardown_initial
+  changed_when: false
+  check_mode: false
+  failed_when: podman_systemd_teardown_initial.rc not in [0, 4]
+  when:
+    - podman_systemd_action in ['stopped', 'absent']
+    - podman_systemd_removal_load.stdout | trim == 'loaded'
+  tags: podman_systemd
+
+- name: Classify an already successful inactive loaded service
+  ansible.builtin.set_fact:
+    podman_systemd_teardown_already_successful: >-
+      {{ 'LoadState=loaded' in (podman_systemd_teardown_initial.stdout_lines | default([])) and
+         'ActiveState=inactive' in (podman_systemd_teardown_initial.stdout_lines | default([])) and
+         'Result=success' in (podman_systemd_teardown_initial.stdout_lines | default([])) }}
+  when: podman_systemd_action in ['stopped', 'absent']
+  tags: podman_systemd
+
 - name: Validate the actual loaded native teardown configuration
   ansible.builtin.include_tasks:
     file: teardown_preflight.yml
@@ -54,6 +77,7 @@
   when:
     - podman_systemd_action in ['stopped', 'absent']
     - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - not podman_systemd_teardown_already_successful | default(false) | bool
   tags: podman_systemd
 
 - name: Ensure Quadlet directory exists
@@ -116,6 +140,9 @@
   when:
     - podman_systemd_action in ['present', 'started', 'restarted', 'stopped']
     - podman_systemd_action != 'stopped' or podman_systemd_removal_load.stdout | trim == 'loaded'
+    - >-
+      podman_systemd_action != 'stopped' or
+      not podman_systemd_teardown_already_successful | default(false) | bool
   tags:
     - podman_systemd
 
@@ -127,6 +154,7 @@
   when:
     - podman_systemd_action == 'absent'
     - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - not podman_systemd_teardown_already_successful | default(false) | bool
   tags:
     - podman_systemd
 

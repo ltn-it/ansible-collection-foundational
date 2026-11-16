@@ -16,6 +16,54 @@ ANSIBLE = shutil.which('ansible-playbook')
 
 @unittest.skipUnless(ANSIBLE, 'requires the prescribed Ansible EE')
 class TaggedTeardownTests(unittest.TestCase):
+    def test_successfully_inactive_loaded_service_needs_no_new_teardown(self):
+        for action in ['stopped', 'absent']:
+            for active, result, inspected in [
+                ('inactive', 'success', False),
+                ('active', 'success', True),
+                ('inactive', 'exit-code', True),
+                ('inactive', None, True),
+            ]:
+                with self.subTest(action=action, active=active, result=result), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    guard = root / 'guard-called'
+                    stopped = root / 'stop-called'
+                    main = yaml.safe_load((ROOT / 'roles/podman_systemd/tasks/main.yml').read_text())
+                    tasks = [next(t for t in main if t['name'] ==
+                                  'Classify an already successful inactive loaded service')]
+                    for name, marker, module in [
+                        ('Validate the actual loaded native teardown configuration', guard, 'ansible.builtin.include_tasks'),
+                        ('Manage Podman kube service state', stopped, 'ansible.builtin.systemd'),
+                        ('Stop the loaded Podman kube service before disabling or removing it',
+                         stopped, 'ansible.builtin.systemd'),
+                    ]:
+                        task = next(t for t in main if t['name'] == name).copy()
+                        task.pop(module)
+                        task['ansible.builtin.command'] = {'argv': ['/usr/bin/touch', str(marker)]}
+                        tasks.append(task)
+                    status = ['LoadState=loaded', 'ActiveState=' + active]
+                    if result is not None:
+                        status.append('Result=' + result)
+                    play = root / 'play.yml'
+                    play.write_text(yaml.safe_dump([dict(
+                        name='Already successful inactive service', hosts='localhost', gather_facts=False,
+                        vars=dict(podman_systemd_action=action,
+                                  podman_systemd_removal_load={'stdout': 'loaded'},
+                                  podman_systemd_teardown_initial={'stdout_lines': status}),
+                        tasks=tasks,
+                    )], sort_keys=False))
+                    config = root / 'ansible.cfg'
+                    config.write_text('[defaults]\nstdout_callback=default\n')
+                    outcome = subprocess.run(  # noqa: S603 -- trusted EE Ansible and private fixture.
+                        [ANSIBLE, '-i', 'localhost,', '-c', 'local', str(play)],
+                        env=os.environ | {'ANSIBLE_CONFIG': str(config), 'ANSIBLE_LOCAL_TEMP': str(root / 'local'),
+                                          'ANSIBLE_REMOTE_TEMP': str(root / 'remote')},
+                        capture_output=True, text=True, timeout=60, check=False,
+                    )
+                    self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+                    self.assertEqual(guard.exists(), inspected)
+                    self.assertEqual(stopped.exists(), inspected)
+
     def test_missing_inactive_stop_skips_service_management_and_accepts_not_found_status(self):
         for load, active, expected, managed in [
             ('not-found', 'inactive', 0, False),

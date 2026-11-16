@@ -79,6 +79,11 @@ After a loaded-unit stop attempt, `Result=success` is required even if its
 fragment disappears. Missing or unsuccessful results preserve recovery files.
 An already missing inactive `stopped` request performs no stop attempt and needs
 no historical result, but independently rechecks that the service stays inactive.
+A loaded service already reporting both inactive and success needs no further
+stop or loaded-command inspection. This supports repeated teardown after systemd
+garbage-collects the inactive unit between calls. The role independently rechecks
+inactive/success before removal; active, failed, or unconfirmed services still
+require the original loaded teardown preflight and a successful stop.
 An explicit stop does not render a new Quadlet, create its directory or reload
 systemd first. It also leaves enablement unchanged, since enable/disable can
 implicitly reload a pending definition. Removal disables only after a confirmed
