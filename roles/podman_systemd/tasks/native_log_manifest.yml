@@ -1,0 +1,33 @@
+---
+- name: Read the single-container manifest before selecting a shared native log path
+  ansible.builtin.slurp:
+    src: "{{ podman_systemd_manifest_path }}"
+  register: podman_systemd_log_manifest
+  no_log: true
+  tags: always
+
+- name: Require exactly one Pod application container without initializers
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_log_documents | length == 1
+      - podman_systemd_log_documents[0] is mapping
+      - podman_systemd_log_documents[0].kind | default('') == 'Pod'
+      - podman_systemd_log_documents[0].spec | default(none) is mapping
+      - podman_systemd_log_containers is sequence
+      - podman_systemd_log_containers is not string
+      - podman_systemd_log_containers is not mapping
+      - podman_systemd_log_containers | length == 1
+      - podman_systemd_log_containers[0] is mapping
+      - podman_systemd_log_initializers is sequence
+      - podman_systemd_log_initializers is not string
+      - podman_systemd_log_initializers is not mapping
+      - podman_systemd_log_initializers | length == 0
+    fail_msg: >-
+      A shared native log path requires one Pod with one mapping-shaped application
+      container and an empty initializer sequence.
+  vars:
+    podman_systemd_log_documents: "{{ podman_systemd_log_manifest.content | b64decode | from_yaml_all | list }}"
+    podman_systemd_log_containers: "{{ podman_systemd_log_documents[0].spec.containers | default(none) }}"
+    podman_systemd_log_initializers: "{{ podman_systemd_log_documents[0].spec.initContainers | default([]) }}"
+  no_log: true
+  tags: always

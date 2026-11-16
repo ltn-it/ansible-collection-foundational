@@ -1,0 +1,6 @@
+---
+minor_changes:
+  - >-
+    podman_systemd - add an optional prepared native k8s-file log destination
+    for one application container in one Pod, preserving stable paths across
+    kube replacements without a capture helper or additional root service.

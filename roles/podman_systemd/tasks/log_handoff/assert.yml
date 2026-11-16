@@ -1,0 +1,44 @@
+---
+- name: Require an explicit executable phase and rootless profile
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - >-
+        podman_systemd_log_handoff_action in ['plan', 'hold', 'copy', 'authorize_start', 'verify', 'finalize']
+      - podman_systemd_log_handoff_operation is string
+      - podman_systemd_log_handoff_operation is match('^[a-z][a-z0-9-]{0,39}\Z')
+      - podman_systemd_log_handoff_profile is mapping
+      - podman_systemd_log_handoff_stop_order is sequence
+      - podman_systemd_log_handoff_stop_order is not string
+      - podman_systemd_log_handoff_stop_order is not mapping
+      - podman_systemd_log_handoff_stop_order | length > 0
+      - podman_systemd_log_handoff_setype is string
+      - >-
+        podman_systemd_log_handoff_setype == '' or podman_systemd_log_handoff_setype is match('^[a-z][a-z0-9_]*_t\Z')
+    quiet: true
+    fail_msg: >-
+      Native log handoff requires explicit inputs and an actual run; check mode cannot prove a stopped writer.
+
+
+- name: Require the complete nonsecret profile shape
+  ansible.builtin.assert:
+    that:
+      - >-
+        podman_systemd_log_handoff_profile.keys() | list | sort == ['components', 'graphroot', 'hostname',
+        'runtime_uid',
+        'runtime_user']
+      - podman_systemd_log_handoff_profile.hostname is string
+      - podman_systemd_log_handoff_profile.hostname is match('^[A-Za-z0-9][A-Za-z0-9_.-]*\Z')
+      - podman_systemd_log_handoff_profile.runtime_user is string
+      - podman_systemd_log_handoff_profile.runtime_user is match('^[a-z_][a-z0-9_-]*\Z')
+      - podman_systemd_log_handoff_profile.runtime_uid is integer
+      - podman_systemd_log_handoff_profile.runtime_uid > 0
+      - podman_systemd_log_handoff_profile.graphroot is string
+      - podman_systemd_log_handoff_profile.graphroot is match('^/[A-Za-z0-9_./-]+\Z')
+      - podman_systemd_log_handoff_profile.components is mapping
+      - >-
+        podman_systemd_log_handoff_profile.components.keys() | list | sort == podman_systemd_log_handoff_stop_order
+        | unique | sort
+      - >-
+        podman_systemd_log_handoff_stop_order | unique | length == podman_systemd_log_handoff_stop_order | length
+    quiet: true

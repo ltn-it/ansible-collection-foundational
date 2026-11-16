@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 
 import yaml
+from jinja2 import Environment, StrictUndefined
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,8 +26,24 @@ class PodmanSystemdContractTests(unittest.TestCase):
 
         self.assertIn("{% for network in podman_systemd_networks %}", template)
         self.assertIn("Network={{ network }}", template)
-        self.assertNotIn("PodmanArgs=", template)
         self.assertNotIn("podman kube play", template)
+
+    def test_native_log_destination_is_opt_in(self) -> None:
+        defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+        template = Environment(undefined=StrictUndefined).from_string(
+            (ROLE / "templates" / "kube.quadlet.j2").read_text()
+        )
+        values = dict(defaults, podman_systemd_description="Fixture",
+                      podman_systemd_manifest_path="/private/pod.yml",
+                      podman_systemd_after=[], podman_systemd_wants=[])
+        self.assertNotIn("PodmanArgs=", template.render(**values))
+        values["podman_systemd_log_path"] = "/private/application.log"
+        rendered = template.render(**values)
+        self.assertIn(
+            "PodmanArgs=--log-driver=k8s-file --log-opt=path=/private/application.log",
+            rendered,
+        )
+        self.assertEqual(rendered.count("PodmanArgs="), 1)
 
     def test_network_values_are_bounded_to_single_line_strings(self) -> None:
         tasks = yaml.safe_load(

@@ -1,0 +1,6 @@
+---
+- name: Recheck the full preserved prefix and replacement set
+  ansible.builtin.import_tasks: verify.yml
+
+- name: Finalize only after every application is verified
+  ansible.builtin.import_tasks: finalize_cleanup.yml

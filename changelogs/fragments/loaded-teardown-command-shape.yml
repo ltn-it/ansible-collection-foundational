@@ -1,0 +1,7 @@
+---
+bugfixes:
+  - podman_systemd - reject ignored native command failures and multiple loaded manifest
+    inputs before service mutation, and resolve the manifest independently of trailing
+    supported boolean options.
+  - podman_systemd - validate loaded native Kube manifests and failure handling even
+    when the existing service has no explicitly configured logging options.

@@ -1,0 +1,95 @@
+---
+- name: Refuse a preexisting planned state
+  ansible.builtin.stat:
+    path: '{{ podman_systemd_h_state_dir }}'
+    follow: false
+  register: podman_systemd_h_state_before
+- name: Refuse ambiguous prior ownership
+  ansible.builtin.assert:
+    that: not podman_systemd_h_state_before.stat.exists
+    quiet: true
+- name: Inspect planned holding directories before creating anything
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.stat:
+    path: >-
+      {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
+    follow: false
+  loop: '{{ podman_systemd_h_names }}'
+  register: podman_systemd_h_initial_stages
+- name: Accept only absent or already private runtime-owned holding directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.stat.exists or (item.stat.isdir and not item.stat.islnk and item.stat.uid ==
+        podman_systemd_log_handoff_profile.runtime_uid
+        and item.stat.mode == '0700')
+    quiet: true
+  loop: '{{ podman_systemd_h_initial_stages.results }}'
+- name: Inspect the root metadata parent before preparing an operation
+  ansible.builtin.stat:
+    path: /var/lib/lit-podman-log-handoff
+    follow: false
+  register: podman_systemd_h_initial_parent
+- name: Reject unexpected root metadata parent ownership or permissions
+  ansible.builtin.assert:
+    that:
+      - >-
+        not podman_systemd_h_initial_parent.stat.exists or (podman_systemd_h_initial_parent.stat.isdir and not
+        podman_systemd_h_initial_parent.stat.islnk and podman_systemd_h_initial_parent.stat.uid == 0 and
+        podman_systemd_h_initial_parent.stat.mode
+        == '0700')
+    quiet: true
+- name: Prepare the private root metadata parent
+  ansible.builtin.file:
+    path: /var/lib/lit-podman-log-handoff
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+- name: Prepare only empty owned graph holding directories
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.file:
+    path: >-
+      {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
+    state: directory
+    mode: '0700'
+  loop: '{{ podman_systemd_h_names }}'
+- name: Require all holding directories to be empty before committing a new plan
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import pathlib,sys; sys.exit(1 if any(pathlib.Path(sys.argv[1]).iterdir()) else 0)
+      - >-
+        {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
+  changed_when: false
+  loop: '{{ podman_systemd_h_names }}'
+- name: Read and bind all selected actual running legacy sources
+  ansible.builtin.include_tasks: query.yml
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item
+- name: Prepare root-owned planned state storage
+  ansible.builtin.file:
+    path: '{{ podman_systemd_h_state_dir }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+- name: Commit the complete plan BEFORE creating any live hardlink
+  ansible.builtin.copy:
+    dest: '{{ podman_systemd_h_state }}'
+    owner: root
+    group: root
+    mode: '0600'
+    content: >-
+      {{ {'version': 2, 'hostname': podman_systemd_log_handoff_profile.hostname, 'profile_sha256':
+      podman_systemd_log_handoff_profile
+      | to_json(sort_keys=True) | hash('sha256'), 'stop_order': podman_systemd_h_names, 'sources':
+      podman_systemd_h_saved}
+      | to_nice_json }}

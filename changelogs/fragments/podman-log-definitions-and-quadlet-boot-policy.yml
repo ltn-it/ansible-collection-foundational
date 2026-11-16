@@ -1,0 +1,12 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - reject native log destinations that resolve to or share file identity
+    with the manifest or Quadlet before rendering.
+  - >-
+    podman_systemd - check runtime write and search access to every atomic-copy destination
+    parent before stopping any handoff application.
+  - >-
+    podman_systemd - reconcile generated-service boot policy through the Quadlet source,
+    including disabled setup and retained definitions after confirmed teardown,
+    without invoking generated-service enable or disable.

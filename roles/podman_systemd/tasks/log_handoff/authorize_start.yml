@@ -1,0 +1,54 @@
+---
+- name: Restore the complete durable plan
+  ansible.builtin.include_tasks: load.yml
+- name: Require every closed prefix before starting any replacement
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import pathlib,stat,sys
+        process=pathlib.Path('/proc/'+sys.argv[3]+'/stat')
+        try:
+            if process.read_text().rsplit(')',1)[1].split()[19]==sys.argv[4]:
+                raise RuntimeError('OLD_WRITER_STILL_ALIVE')
+        except FileNotFoundError:
+            pass
+        old=pathlib.Path(sys.argv[1]);new=pathlib.Path(sys.argv[2])
+        for path in [old,new]:
+            meta=path.lstat()
+            if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=int(sys.argv[-1]) or meta.st_nlink!=1:
+                raise RuntimeError('UNVERIFIED_CLOSED_SOURCE_OR_DESTINATION')
+        if old.lstat().st_ino!=int(sys.argv[5]) or old.lstat().st_dev!=int(sys.argv[6]):
+            raise RuntimeError('REPLACED_RETAINED_SOURCE')
+        with old.open('rb') as original,new.open('rb') as target:
+            while True:
+                chunk=original.read(1024*1024)
+                if not chunk:
+                    break
+                if target.read(len(chunk))!=chunk:
+                    raise RuntimeError('CLOSED_PREFIX_NOT_PRESENT')
+      - >-
+        {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}/held.log
+      - '{{ podman_systemd_log_handoff_profile.components[item].destination }}'
+      - '{{ podman_systemd_h_saved[item].conmon }}'
+      - '{{ podman_systemd_h_saved[item].start }}'
+      - '{{ podman_systemd_h_saved[item].source_inode | string }}'
+      - '{{ podman_systemd_h_saved[item].source_dev | string }}'
+      - '{{ podman_systemd_log_handoff_profile.runtime_uid | string }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  changed_when: false
+  loop: '{{ podman_systemd_h_names }}'
+- name: Require all original Pod identities and names absent before any replacement starts
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: absent
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item
