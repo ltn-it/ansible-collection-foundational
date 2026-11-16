@@ -67,14 +67,15 @@ class LogDestinationTests(unittest.TestCase):
                     accepted = False
                 self.assertEqual(accepted, case == 'separate')
 
-    def test_atomic_copy_requires_write_and_search_access_to_the_target_parent(self):
+    def test_atomic_copy_requires_readable_source_and_writable_searchable_target_parent(self):
         import hashlib
 
         tasks = yaml.safe_load((TASKS / 'log_handoff/copy_guard_one.yml').read_text())
         task = next(t for t in tasks if t['name'] ==
                     'Verify immutable manifest and definition hashes and acceptable prior destination bytes')
-        for mode, accepted in [(0o700, True), (0o500, False)]:
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+        for mode, source_mode, accepted in [(0o700, 0o600, True), (0o500, 0o600, False),
+                                             (0o700, 0o200, False), (0o700, 0o000, False)]:
+            with self.subTest(mode=mode, source_mode=source_mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 parent = root / 'destination'
                 parent.mkdir()
@@ -86,6 +87,7 @@ class LogDestinationTests(unittest.TestCase):
                 stage = root / 'stage'
                 stage.mkdir()
                 held.rename(stage / 'held.log')
+                (stage / 'held.log').chmod(source_mode)
                 values = dict(podman_systemd_h_name='app', podman_systemd_h_stage=str(stage),
                               podman_systemd_h_log=str(target), podman_systemd_h_activity=dict(stdout='active'),
                               podman_systemd_h_spec=dict(manifest=str(manifest), quadlet=str(quadlet)),

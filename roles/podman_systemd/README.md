@@ -182,7 +182,8 @@ an interrupted or repeated `hold` can resume with the original profile.
 
 `copy` first checks **all** holds, destinations, current writers, original
 manifest/Quadlet hashes and loaded native stop commands before stopping any
-application. The runtime account must also have write and search access to every
+application. The runtime account must be able to open every held source for
+reading even when its destination is empty, and have write and search access to every
 destination parent, as the closed copy uses an atomic replacement there. It stops
 through the ordinary role and copies only after the old
 writer identity and userdata path are gone. A nonempty destination is accepted

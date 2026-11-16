@@ -146,6 +146,8 @@
         target=pathlib.Path(sys.argv[5]);held=pathlib.Path(sys.argv[6])
         if not os.access(target.parent, os.W_OK | os.X_OK):
             raise RuntimeError('DESTINATION_PARENT_NOT_WRITABLE_OR_SEARCHABLE')
+        with held.open('rb'):
+            pass
         if target.stat().st_size:
             if sys.argv[7]!='inactive' or digest(target)!=digest(held):
                 raise RuntimeError('UNRECOGNIZED_EXISTING_DESTINATION')
