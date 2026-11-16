@@ -16,5 +16,7 @@ PodmanArgs=--log-driver=k8s-file --log-opt=path={{ podman_systemd_log_path }}
 Network={{ network }}
 {% endfor %}
 
+{% if podman_systemd_enabled %}
 [Install]
 WantedBy={{ podman_systemd_install_wanted_by }}
+{% endif %}

@@ -39,6 +39,8 @@ An empty value preserves Podman's default logging. No reader, capture worker or
 new root service is installed. Configure operating-system log rotation separately;
 this setting provides neither rotation nor a hard size limit. Existing file
 history is not migrated automatically when changing the destination.
+The destination must not resolve to, or share file identity with, the runtime
+manifest or the Quadlet definition. This is checked before rendering either file.
 
 See `defaults/main.yml` for the remaining service, manifest, state, and
 installation inputs.
@@ -85,9 +87,15 @@ garbage-collects the inactive unit between calls. The role independently recheck
 inactive/success before removal; active, failed, or unconfirmed services still
 require the original loaded teardown preflight and a successful stop.
 An explicit stop does not render a new Quadlet, create its directory or reload
-systemd first. It also leaves enablement unchanged, since enable/disable can
-implicitly reload a pending definition. Removal disables only after a confirmed
-successful stop. It stops the existing loaded definition and preserves those bytes
+systemd first. It also leaves boot policy unchanged. Generated services are never
+passed to `systemctl enable` or `disable`: `podman_systemd_enabled` controls the
+Quadlet's `[Install]` section for normal setup. After a confirmed successful stop,
+`absent` removes the Quadlet and reloads the manager. With
+`podman_systemd_remove_quadlet: false`, it instead removes only the original
+`[Install]` section, retaining the original application definition and file mode,
+then reloads the manager. A missing retained file needs no edit. File regularity
+and effective file/parent write and search access are checked before teardown.
+Stopping uses the existing loaded definition and preserves those bytes
 for recovery even if the caller supplies different desired settings.
 Stop errors and a failed service result keep
 the Quadlet for recovery. Restore the manifest and recover/reset the failed
@@ -172,7 +180,9 @@ an interrupted or repeated `hold` can resume with the original profile.
 
 `copy` first checks **all** holds, destinations, current writers, original
 manifest/Quadlet hashes and loaded native stop commands before stopping any
-application. It stops through the ordinary role and copies only after the old
+application. The runtime account must also have write and search access to every
+destination parent, as the closed copy uses an atomic replacement there. It stops
+through the ordinary role and copies only after the old
 writer identity and userdata path are gone. A nonempty destination is accepted
 only as an exact prior closed copy while its old container is absent. A fresh
 controller can resume after a completed component copy. Unexpected files or

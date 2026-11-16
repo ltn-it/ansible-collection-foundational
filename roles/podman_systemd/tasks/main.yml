@@ -3,6 +3,47 @@
   ansible.builtin.import_tasks: assert.yml
   tags: always
 
+- name: Inspect the original Quadlet when retaining its disabled source
+  ansible.builtin.stat:
+    path: "{{ podman_systemd_quadlet_path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: podman_systemd_retained_quadlet
+  when:
+    - podman_systemd_action == 'absent'
+    - not podman_systemd_remove_quadlet | bool
+  tags: podman_systemd
+
+- name: Require a regular single-link retained Quadlet before teardown
+  ansible.builtin.assert:
+    that:
+      - >-
+        not podman_systemd_retained_quadlet.stat.exists or
+        (podman_systemd_retained_quadlet.stat.isreg | default(false) and
+         not podman_systemd_retained_quadlet.stat.islnk | default(true) and
+         podman_systemd_retained_quadlet.stat.nlink | default(-1) == 1)
+    quiet: true
+  when:
+    - podman_systemd_action == 'absent'
+    - not podman_systemd_remove_quadlet | bool
+  tags: podman_systemd
+
+- name: Check effective access to disable a retained Quadlet before teardown
+  ansible.builtin.command:
+    argv: "{{ ['/usr/bin/test'] + item }}"
+  loop:
+    - ['-w', '{{ podman_systemd_quadlet_path }}']
+    - ['-w', '{{ podman_systemd_quadlet_path | dirname }}']
+    - ['-x', '{{ podman_systemd_quadlet_path | dirname }}']
+  changed_when: false
+  check_mode: false
+  when:
+    - podman_systemd_action == 'absent'
+    - not podman_systemd_remove_quadlet | bool
+    - podman_systemd_retained_quadlet.stat.exists
+  tags: podman_systemd
+
 - name: Read the Podman kube service load state before teardown
   ansible.builtin.command:
     argv: >-
@@ -135,7 +176,6 @@
           else podman_systemd_action
         )
       }}
-    enabled: "{{ omit if podman_systemd_action == 'stopped' else podman_systemd_enabled }}"
     scope: "{{ podman_systemd_scope }}"
   when:
     - podman_systemd_action in ['present', 'started', 'restarted', 'stopped']
@@ -195,14 +235,15 @@
   tags:
     - podman_systemd
 
-- name: Disable Podman kube service only after confirmed teardown
-  ansible.builtin.systemd:
-    name: "{{ podman_systemd_service_name }}"
-    enabled: false
-    scope: "{{ podman_systemd_scope }}"
+- name: Disable boot policy in the retained original Quadlet after confirmed teardown
+  ansible.builtin.replace:
+    path: "{{ podman_systemd_quadlet_path }}"
+    regexp: '(?ms)^\[Install\][ \t]*\r?\n.*?(?=^\[|\Z)'
+    replace: ''
   when:
     - podman_systemd_action == 'absent'
-    - podman_systemd_removal_load.stdout | trim == 'loaded'
+    - not podman_systemd_remove_quadlet | bool
+    - podman_systemd_retained_quadlet.stat.exists
   tags: podman_systemd
 
 - name: Remove Podman kube Quadlet unit

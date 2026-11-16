@@ -82,8 +82,21 @@
                     or info.st_uid not in allowed_owners
                     or stat.S_IMODE(info.st_mode) & 0o022):
                 sys.exit(1)
+        destination = pathlib.Path(sys.argv[1])
+        for definition in sys.argv[2:]:
+            source = pathlib.Path(definition)
+            if destination.resolve() == source.resolve():
+                raise RuntimeError('LOG_DESTINATION_OVERLAPS_DEFINITION')
+            try:
+                same = os.path.samefile(destination, source)
+            except FileNotFoundError:
+                same = False
+            if same:
+                raise RuntimeError('LOG_DESTINATION_OVERLAPS_DEFINITION')
         print(os.geteuid())
       - "{{ podman_systemd_log_path }}"
+      - "{{ podman_systemd_manifest_path }}"
+      - "{{ podman_systemd_quadlet_path }}"
   changed_when: false
   check_mode: false
   register: podman_systemd_log_ancestry_check
