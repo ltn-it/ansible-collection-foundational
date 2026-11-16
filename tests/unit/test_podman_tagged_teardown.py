@@ -15,6 +15,38 @@ ANSIBLE = shutil.which('ansible-playbook')
 
 @unittest.skipUnless(ANSIBLE, 'requires the prescribed Ansible EE')
 class TaggedTeardownTests(unittest.TestCase):
+    def test_missing_fragment_after_stop_still_requires_inactive_state(self):
+        main = yaml.safe_load((ROOT / 'roles/podman_systemd/tasks/main.yml').read_text())
+        task = next(t for t in main if t['name'] ==
+                    'Require successful Podman kube service teardown before Quadlet removal')
+        for load, active, result, expected in [
+            ('not-found', 'active', 'success', 2),
+            ('not-found', 'inactive', 'success', 0),
+            ('loaded', 'active', 'success', 2),
+            ('loaded', 'inactive', 'exit-code', 2),
+            ('loaded', 'inactive', 'success', 0),
+        ]:
+            with self.subTest(load=load, active=active, result=result), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                play = root / 'play.yml'
+                play.write_text(yaml.safe_dump([dict(
+                    name='Post-stop state proof', hosts='localhost', gather_facts=False,
+                    vars=dict(podman_systemd_action='absent',
+                              podman_systemd_removal_load={'stdout': 'loaded'},
+                              podman_systemd_removal_result={'stdout_lines': [
+                                  'LoadState=' + load, 'ActiveState=' + active, 'Result=' + result]}),
+                    tasks=[task],
+                )], sort_keys=False))
+                config = root / 'ansible.cfg'
+                config.write_text('[defaults]\nstdout_callback=default\n')
+                outcome = subprocess.run(  # noqa: S603 -- trusted EE Ansible and private fixture.
+                    [ANSIBLE, '-i', 'localhost,', '-c', 'local', str(play)],
+                    env=os.environ | {'ANSIBLE_CONFIG': str(config), 'ANSIBLE_LOCAL_TEMP': str(root / 'local'),
+                                      'ANSIBLE_REMOTE_TEMP': str(root / 'remote')},
+                    capture_output=True, text=True, timeout=60, check=False,
+                )
+                self.assertEqual(outcome.returncode, expected, outcome.stdout + outcome.stderr)
+
     def test_tag_filtered_missing_manifest_fails_before_the_following_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

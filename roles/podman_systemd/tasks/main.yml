@@ -146,10 +146,10 @@
   ansible.builtin.assert:
     that:
       - >-
-        'LoadState=not-found' in podman_systemd_removal_result.stdout_lines or
-        ('LoadState=loaded' in podman_systemd_removal_result.stdout_lines and
-         'ActiveState=inactive' in podman_systemd_removal_result.stdout_lines and
-         'Result=success' in podman_systemd_removal_result.stdout_lines)
+        'ActiveState=inactive' in podman_systemd_removal_result.stdout_lines and
+        ('LoadState=not-found' in podman_systemd_removal_result.stdout_lines or
+         ('LoadState=loaded' in podman_systemd_removal_result.stdout_lines and
+          'Result=success' in podman_systemd_removal_result.stdout_lines))
     fail_msg: >-
       Podman kube teardown is unconfirmed. Keep the Quadlet and manifest,
       recover the failed service and pod, and retry removal only after a successful stop.
