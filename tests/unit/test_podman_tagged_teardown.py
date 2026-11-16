@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,6 +16,48 @@ ANSIBLE = shutil.which('ansible-playbook')
 
 @unittest.skipUnless(ANSIBLE, 'requires the prescribed Ansible EE')
 class TaggedTeardownTests(unittest.TestCase):
+    def test_missing_inactive_stop_skips_service_management_and_accepts_not_found_status(self):
+        for load, active, expected, managed in [
+            ('not-found', 'inactive', 0, False),
+            ('not-found', 'active', 2, False),
+            ('loaded', 'inactive', 0, True),
+        ]:
+            with self.subTest(load=load, active=active), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                marker = root / 'service-management'
+                main = yaml.safe_load((ROOT / 'roles/podman_systemd/tasks/main.yml').read_text())
+                names = [
+                    'Require an inactive service when its loaded fragment is unavailable',
+                    'Manage Podman kube service state',
+                    'Verify the Podman kube service state after teardown',
+                    'Require successful Podman kube service teardown before Quadlet removal',
+                ]
+                tasks = [next(t for t in main if t['name'] == name) for name in names]
+                tasks[1].pop('ansible.builtin.systemd')
+                tasks[1]['ansible.builtin.command'] = {'argv': ['/usr/bin/touch', str(marker)]}
+                status = '\n'.join(['LoadState=' + load, 'ActiveState=' + active, 'Result=success'])
+                tasks[2]['ansible.builtin.command'] = {'argv': [sys.executable, '-c',
+                    'import sys; print(' + repr(status) + '); sys.exit(' +
+                    ('4' if load == 'not-found' else '0') + ')']}
+                play = root / 'play.yml'
+                play.write_text(yaml.safe_dump([dict(
+                    name='Already missing stop contract', hosts='localhost', gather_facts=False,
+                    vars=dict(podman_systemd_action='stopped',
+                              podman_systemd_removal_load={'stdout': load},
+                              podman_systemd_missing_fragment_state={'stdout_lines': status.splitlines()}),
+                    tasks=tasks,
+                )], sort_keys=False))
+                config = root / 'ansible.cfg'
+                config.write_text('[defaults]\nstdout_callback=default\n')
+                outcome = subprocess.run(  # noqa: S603 -- trusted EE Ansible and private fixture.
+                    [ANSIBLE, '-i', 'localhost,', '-c', 'local', str(play)],
+                    env=os.environ | {'ANSIBLE_CONFIG': str(config), 'ANSIBLE_LOCAL_TEMP': str(root / 'local'),
+                                      'ANSIBLE_REMOTE_TEMP': str(root / 'remote')},
+                    capture_output=True, text=True, timeout=60, check=False,
+                )
+                self.assertEqual(outcome.returncode, expected, outcome.stdout + outcome.stderr)
+                self.assertEqual(marker.exists(), managed)
+
     def test_missing_fragment_after_stop_still_requires_inactive_state(self):
         main = yaml.safe_load((ROOT / 'roles/podman_systemd/tasks/main.yml').read_text())
         task = next(t for t in main if t['name'] ==

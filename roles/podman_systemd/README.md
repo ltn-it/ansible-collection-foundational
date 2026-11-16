@@ -64,10 +64,13 @@ wrappers and unrecognized executables are rejected rather than exempted.
 Every loaded ExecStop and ExecStopPost command must also be a directly invoked
 native down command for the verified manifest. A wrapped or unrelated stop
 cannot hide beside another verified down command.
-An `absent` request tolerates a missing systemd unit without a manifest only
+An `absent` or `stopped` request tolerates a missing systemd unit without a manifest only
 when the manager also proves it inactive. `LoadState=not-found` alone is
 insufficient: a running service can outlive its unit fragment. Restore its
 original definition and teardown source before retrying in that state.
+A `stopped` request for an already missing inactive unit skips service
+management and independently rechecks activity. Repeated requests remain
+unchanged and successful; a missing fragment never excuses an active service.
 A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same

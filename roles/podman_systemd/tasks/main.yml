@@ -113,7 +113,9 @@
       }}
     enabled: "{{ omit if podman_systemd_action == 'stopped' else podman_systemd_enabled }}"
     scope: "{{ podman_systemd_scope }}"
-  when: podman_systemd_action in ['present', 'started', 'restarted', 'stopped']
+  when:
+    - podman_systemd_action in ['present', 'started', 'restarted', 'stopped']
+    - podman_systemd_action != 'stopped' or podman_systemd_removal_load.stdout | trim == 'loaded'
   tags:
     - podman_systemd
 
@@ -135,6 +137,7 @@
          ['show', podman_systemd_service_name, '--property=LoadState,ActiveState,Result'] }}
   register: podman_systemd_removal_result
   changed_when: false
+  failed_when: podman_systemd_removal_result.rc not in [0, 4]
   when:
     - podman_systemd_action in ['stopped', 'absent']
     - podman_systemd_action == 'stopped' or podman_systemd_removal_load.stdout | trim == 'loaded'
