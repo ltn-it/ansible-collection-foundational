@@ -35,7 +35,8 @@ class TaggedTeardownTests(unittest.TestCase):
                 tasks = [next(t for t in main if t['name'] == name) for name in names]
                 tasks[1].pop('ansible.builtin.systemd')
                 tasks[1]['ansible.builtin.command'] = {'argv': ['/usr/bin/touch', str(marker)]}
-                status = '\n'.join(['LoadState=' + load, 'ActiveState=' + active, 'Result=success'])
+                status = '\n'.join(['LoadState=' + load, 'ActiveState=' + active] +
+                                   ([] if load == 'not-found' else ['Result=success']))
                 tasks[2]['ansible.builtin.command'] = {'argv': [sys.executable, '-c',
                     'import sys; print(' + repr(status) + '); sys.exit(' +
                     ('4' if load == 'not-found' else '0') + ')']}
@@ -65,8 +66,11 @@ class TaggedTeardownTests(unittest.TestCase):
         for load, active, result, expected in [
             ('not-found', 'active', 'success', 2),
             ('not-found', 'inactive', 'success', 0),
+            ('not-found', 'inactive', 'exit-code', 2),
+            ('not-found', 'inactive', None, 2),
             ('loaded', 'active', 'success', 2),
             ('loaded', 'inactive', 'exit-code', 2),
+            ('loaded', 'inactive', None, 2),
             ('loaded', 'inactive', 'success', 0),
         ]:
             with self.subTest(load=load, active=active, result=result), tempfile.TemporaryDirectory() as directory:
@@ -77,7 +81,8 @@ class TaggedTeardownTests(unittest.TestCase):
                     vars=dict(podman_systemd_action='absent',
                               podman_systemd_removal_load={'stdout': 'loaded'},
                               podman_systemd_removal_result={'stdout_lines': [
-                                  'LoadState=' + load, 'ActiveState=' + active, 'Result=' + result]}),
+                                  'LoadState=' + load, 'ActiveState=' + active] +
+                                  ([] if result is None else ['Result=' + result])}),
                     tasks=[task],
                 )], sort_keys=False))
                 config = root / 'ansible.cfg'

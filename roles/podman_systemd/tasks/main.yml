@@ -150,9 +150,12 @@
     that:
       - >-
         'ActiveState=inactive' in podman_systemd_removal_result.stdout_lines and
-        ('LoadState=not-found' in podman_systemd_removal_result.stdout_lines or
-         ('LoadState=loaded' in podman_systemd_removal_result.stdout_lines and
-          'Result=success' in podman_systemd_removal_result.stdout_lines))
+        ((podman_systemd_action == 'stopped' and
+          podman_systemd_removal_load.stdout | trim == 'not-found' and
+          'LoadState=not-found' in podman_systemd_removal_result.stdout_lines) or
+         ('Result=success' in podman_systemd_removal_result.stdout_lines and
+          ('LoadState=loaded' in podman_systemd_removal_result.stdout_lines or
+           'LoadState=not-found' in podman_systemd_removal_result.stdout_lines)))
     fail_msg: >-
       Podman kube teardown is unconfirmed. Keep the Quadlet and manifest,
       recover the failed service and pod, and retry removal only after a successful stop.

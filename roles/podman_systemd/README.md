@@ -75,6 +75,10 @@ A loaded unit must
 stop successfully and report inactive/success
 before its Quadlet can be removed. Explicit `stopped` requests require the same
 post-stop state proof; a failed teardown cannot be reported as a successful stop.
+After a loaded-unit stop attempt, `Result=success` is required even if its
+fragment disappears. Missing or unsuccessful results preserve recovery files.
+An already missing inactive `stopped` request performs no stop attempt and needs
+no historical result, but independently rechecks that the service stays inactive.
 An explicit stop does not render a new Quadlet, create its directory or reload
 systemd first. It also leaves enablement unchanged, since enable/disable can
 implicitly reload a pending definition. Removal disables only after a confirmed
