@@ -9,3 +9,7 @@ bugfixes:
   - >-
     podman_systemd - allow a handoff caller to require that the actual loaded
     native play/down commands reference its reviewed original manifest.
+  - >-
+    podman_systemd - pass the recorded inode and device in the expected argument
+    order to the pre-start log handoff guard; test the rendered shipped command
+    arrays as well as the byte verifier itself.

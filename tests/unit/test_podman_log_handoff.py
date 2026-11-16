@@ -115,6 +115,66 @@ class ClosedPrefixTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaisesRegex(RuntimeError, 'UNVERIFIED_SOURCE_OR_DESTINATION'):
                 self.verify(b'old', b'old-new', **options)
 
+class ShippedCommandArgumentTests(unittest.TestCase):
+    """Template the shipped argv, rather than manually reproducing its argument order."""
+
+    def run_guard(self, filename, *, wrong_inode=False, wrong_device=False, damaged=False, live_writer=False):
+        from ansible.parsing.dataloader import DataLoader
+        from ansible.template import Templar
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / '.lit-log-handoff-regression-application'
+            stage.mkdir()
+            source, target = stage / 'held.log', root / 'application.log'
+            source.write_bytes(b'original-record\n' * 100000)
+            target.write_bytes(b'corrupt' if damaged else source.read_bytes())
+            meta = source.stat()
+            pid, start = '0', '0'
+            if live_writer:
+                pid = str(os.getpid())
+                start = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19]
+            values = dict(
+                item='application', podman_systemd_h_name='application', podman_systemd_h_stage=str(stage),
+                podman_systemd_h_log=str(target), podman_systemd_h_graph=str(root),
+                podman_systemd_log_handoff_operation='regression',
+                podman_systemd_h_python=dict(ansible_facts=dict(ansible_python=dict(executable=sys.executable))),
+                podman_systemd_log_handoff_profile=dict(runtime_uid=os.geteuid(),
+                                                       components=dict(application=dict(destination=str(target)))),
+                podman_systemd_h_saved=dict(application=dict(
+                    conmon=pid, start=start, source_inode=meta.st_ino + int(wrong_inode),
+                    source_dev=meta.st_dev + int(wrong_device))),
+            )
+            task = next(t for t in yaml.safe_load((TASKS / filename).read_text()) if 'ansible.builtin.command' in t)
+            argv = Templar(loader=DataLoader(), variables=values).template(task['ansible.builtin.command']['argv'])
+            return subprocess.run(argv, capture_output=True, text=True, timeout=10, check=False)  # noqa: S603 -- shipped argv with synthetic files.
+
+    def test_actual_start_and_post_start_argv_accept_the_recorded_identity(self):
+        for filename in ['authorize_start.yml', 'verify_one.yml']:
+            with self.subTest(filename=filename):
+                result = self.run_guard(filename)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_actual_start_and_post_start_argv_reject_either_identity_change(self):
+        for filename in ['authorize_start.yml', 'verify_one.yml']:
+            for change in [dict(wrong_inode=True), dict(wrong_device=True)]:
+                with self.subTest(filename=filename, change=change):
+                    result = self.run_guard(filename, **change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('REPLACED_RETAINED_SOURCE', result.stderr)
+
+    def test_actual_start_and_post_start_argv_reject_corrupt_prefixes(self):
+        for filename in ['authorize_start.yml', 'verify_one.yml']:
+            with self.subTest(filename=filename):
+                result = self.run_guard(filename, damaged=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('PREFIX', result.stderr)
+
+    def test_actual_start_argv_rejects_a_still_live_original_writer(self):
+        result = self.run_guard('authorize_start.yml', live_writer=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('OLD_WRITER_STILL_ALIVE', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

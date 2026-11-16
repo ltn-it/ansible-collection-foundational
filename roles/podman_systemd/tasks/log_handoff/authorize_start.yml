@@ -35,8 +35,8 @@
       - '{{ podman_systemd_log_handoff_profile.components[item].destination }}'
       - '{{ podman_systemd_h_saved[item].conmon }}'
       - '{{ podman_systemd_h_saved[item].start }}'
-      - '{{ podman_systemd_h_saved[item].source_dev | string }}'
       - '{{ podman_systemd_h_saved[item].source_inode | string }}'
+      - '{{ podman_systemd_h_saved[item].source_dev | string }}'
       - '{{ podman_systemd_log_handoff_profile.runtime_uid | string }}'
     chdir: '{{ podman_systemd_h_home }}'
   changed_when: false
