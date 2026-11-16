@@ -16,6 +16,67 @@ ROLE = ROOT / 'roles/podman_systemd'
 
 
 class QuadletBootPolicyTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'requires the prescribed Ansible EE')
+    def test_retained_source_requires_read_and_write_access_before_a_following_stop(self):
+        main = yaml.safe_load((ROLE / 'tasks/main.yml').read_text())
+        names = ['Inspect the original Quadlet when retaining its disabled source',
+                 'Require a regular single-link retained Quadlet before teardown',
+                 'Check effective access to disable a retained Quadlet before teardown']
+        for mode, accepted in [(0o600, True), (0o200, False), (0o400, False)]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, stop = root / 'original.kube', root / 'following-stop'
+                source.write_text('[Install]\nWantedBy=default.target\n')
+                source.chmod(mode)
+                tasks = [next(t for t in main if t['name'] == name) for name in names]
+                tasks.append(dict(name='Following service stop boundary',
+                                  **{'ansible.builtin.command': dict(argv=['/usr/bin/touch', str(stop)])}))
+                play = root / 'play.yml'
+                play.write_text(yaml.safe_dump([dict(hosts='localhost', gather_facts=False, vars=dict(
+                    podman_systemd_action='absent', podman_systemd_remove_quadlet=False,
+                    podman_systemd_quadlet_path=str(source)), tasks=tasks)], sort_keys=False))
+                config = root / 'ansible.cfg'
+                config.write_text('[defaults]\nstdout_callback=default\n')
+                try:
+                    outcome = subprocess.run(  # noqa: S603 -- shipped preflight and isolated real permission fixture.
+                        [shutil.which('ansible-playbook'), '-i', 'localhost,', '-c', 'local', str(play)],
+                        capture_output=True, text=True, timeout=60, check=False,
+                        env=os.environ | {'ANSIBLE_CONFIG': str(config), 'ANSIBLE_LOCAL_TEMP': str(root / 'local'),
+                                          'ANSIBLE_REMOTE_TEMP': str(root / 'remote')})
+                finally:
+                    source.chmod(0o600)
+                self.assertEqual(outcome.returncode == 0, accepted, outcome.stdout + outcome.stderr)
+                self.assertEqual(stop.exists(), accepted)
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'requires the prescribed Ansible EE')
+    def test_install_removal_recognizes_indented_headers_and_preserves_other_sections(self):
+        main = yaml.safe_load((ROLE / 'tasks/main.yml').read_text())
+        task = next(t for t in main if t['name'] ==
+                    'Disable boot policy in the retained original Quadlet after confirmed teardown')
+        for install_indent, kube_indent in [('  ', ''), ('', ' \t')]:
+            with self.subTest(install=install_indent, kube=kube_indent), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / 'original.kube'
+                prefix = '[Unit]\nDescription=Keep exact application bytes\n'
+                application = kube_indent + '[Kube]\nYaml=/private/original.yml\n'
+                source.write_text(prefix + install_indent + '[Install]\nWantedBy=default.target\n' + application)
+                source.chmod(0o600)
+                play = root / 'play.yml'
+                play.write_text(yaml.safe_dump([dict(hosts='localhost', gather_facts=False, vars=dict(
+                    podman_systemd_action='absent', podman_systemd_remove_quadlet=False,
+                    podman_systemd_retained_quadlet=dict(stat=dict(exists=True)),
+                    podman_systemd_quadlet_path=str(source)), tasks=[task])], sort_keys=False))
+                config = root / 'ansible.cfg'
+                config.write_text('[defaults]\nstdout_callback=default\n')
+                outcome = subprocess.run(  # noqa: S603 -- shipped file edit and private valid section layouts.
+                    [shutil.which('ansible-playbook'), '-i', 'localhost,', '-c', 'local', str(play)],
+                    capture_output=True, text=True, timeout=60, check=False,
+                    env=os.environ | {'ANSIBLE_CONFIG': str(config), 'ANSIBLE_LOCAL_TEMP': str(root / 'local'),
+                                      'ANSIBLE_REMOTE_TEMP': str(root / 'remote')})
+                self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+                self.assertEqual(source.read_text(), prefix + application)
+                self.assertEqual(source.stat().st_mode & 0o777, 0o600)
+
     def test_disabled_quadlet_has_no_install_target(self):
         template = Environment(undefined=StrictUndefined).from_string(
             (ROLE / 'templates/kube.quadlet.j2').read_text())

@@ -93,8 +93,10 @@ Quadlet's `[Install]` section for normal setup. After a confirmed successful sto
 `absent` removes the Quadlet and reloads the manager. With
 `podman_systemd_remove_quadlet: false`, it instead removes only the original
 `[Install]` section, retaining the original application definition and file mode,
-then reloads the manager. A missing retained file needs no edit. File regularity
-and effective file/parent write and search access are checked before teardown.
+then reloads the manager. Indented section headers are recognized without
+removing adjacent application sections. A missing retained file needs no edit.
+File regularity, effective read/write access to the file, and write/search
+access to its parent are checked before teardown.
 Stopping uses the existing loaded definition and preserves those bytes
 for recovery even if the caller supplies different desired settings.
 Stop errors and a failed service result keep

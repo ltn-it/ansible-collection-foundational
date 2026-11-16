@@ -33,6 +33,7 @@
   ansible.builtin.command:
     argv: "{{ ['/usr/bin/test'] + item }}"
   loop:
+    - ['-r', '{{ podman_systemd_quadlet_path }}']
     - ['-w', '{{ podman_systemd_quadlet_path }}']
     - ['-w', '{{ podman_systemd_quadlet_path | dirname }}']
     - ['-x', '{{ podman_systemd_quadlet_path | dirname }}']
@@ -238,7 +239,7 @@
 - name: Disable boot policy in the retained original Quadlet after confirmed teardown
   ansible.builtin.replace:
     path: "{{ podman_systemd_quadlet_path }}"
-    regexp: '(?ms)^\[Install\][ \t]*\r?\n.*?(?=^\[|\Z)'
+    regexp: '(?ms)^[ \t]*\[Install\][ \t]*(?:\r?\n|\Z).*?(?=^[ \t]*\[|\Z)'
     replace: ''
   when:
     - podman_systemd_action == 'absent'
