@@ -73,6 +73,12 @@
       - >-
         podman_systemd_h_definition_hashes.results[0].stat.checksum == podman_systemd_h_spec.manifest_sha256
     quiet: true
+- name: Validate the original manifest before retaining or stopping any writer
+  ansible.builtin.import_tasks: ../native_log_manifest.yml
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  vars:
+    podman_systemd_manifest_path: '{{ podman_systemd_h_spec.manifest }}'
 - name: Record the original conmon start identity
   become: true
   become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'

@@ -160,7 +160,13 @@ Run the phases in order, each through the same public entrypoint and exact profi
 container/unit label, process start and source/holding-directory inode. It writes
 root-only mode-0600 JSON under
 `/var/lib/lit-podman-log-handoff/<operation>/` before any live hardlink is made.
-A preexisting plan is not overwritten. `hold` creates or adopts exactly these
+The original manifest must also pass the same single-Pod, single-application and
+no-initializer check used for stable native destinations, before any live hold
+or service stop. Its bytes are read without logging them, after regular-file
+and reviewed-hash checks. Unsupported existing Pods require a separate operator
+migration plan; waiting for the replacement startup to reject them could lose
+unselected container logs. A preexisting plan is not overwritten.
+`hold` creates or adopts exactly these
 same-filesystem links in private runtime-owned directories below the graph root;
 an interrupted or repeated `hold` can resume with the original profile.
 
