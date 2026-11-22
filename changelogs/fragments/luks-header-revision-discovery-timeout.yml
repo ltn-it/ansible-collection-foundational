@@ -1,4 +1,0 @@
----
-bugfixes:
-  - luks_header_escrow - leave LUKS metadata and UUID inspection in revision planning to the bounded snapshot operation.
-  - luks_header_escrow - preserve integer header sizes in revision receipts on the minimum supported Ansible version.

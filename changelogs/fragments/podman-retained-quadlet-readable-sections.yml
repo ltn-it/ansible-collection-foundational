@@ -1,8 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - require effective read access to a retained Quadlet before
-    stopping its application, alongside the existing write and search checks.
-  - >-
-    podman_systemd - recognize indented Install and following section headers
-    when disabling a retained Quadlet, preserving unrelated application bytes.

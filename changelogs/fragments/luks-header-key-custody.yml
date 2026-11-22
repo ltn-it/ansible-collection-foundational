@@ -1,5 +1,0 @@
----
-minor_changes:
-  - >-
-    luks_header_key_custody - add an internal primary-first immutable KV2 wrapping-key
-    custody boundary with deferred creation, independent-copy checks and metadata-only receipts.
