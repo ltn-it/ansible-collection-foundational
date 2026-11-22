@@ -1,6 +1,0 @@
----
-bugfixes:
-  - >-
-    Align the isolated native desktop fixture with the authenticated account-list
-    and user-get identity contract, and keep socket-alias fixtures inside the
-    private controller HOME on Linux and macOS.

@@ -1,4 +1,0 @@
----
-bugfixes:
-  - Native LUKS header custody now revalidates uncached detailed Document metadata before and after downloads,
-    so a concurrent provider revision cannot be hidden by a cached item list.

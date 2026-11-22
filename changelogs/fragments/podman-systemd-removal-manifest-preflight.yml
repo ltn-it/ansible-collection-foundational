@@ -1,5 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - require a readable teardown manifest before stopping or
-    disabling a loaded native-log unit for removal; allow a proven absent unit.

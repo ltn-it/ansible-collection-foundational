@@ -1,5 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - require native log files to be owned by the effective runtime UID
-    with mode 0600 before changing the Quadlet or service.

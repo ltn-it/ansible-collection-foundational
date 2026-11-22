@@ -97,6 +97,11 @@ plugins:
       name: luks_header_restore_drill
       namespace: ''
       version_added: 1.34.0
+    luks_header_snapshot:
+      description: Capture a bounded LUKS2 header revision on the managed host
+      name: luks_header_snapshot
+      namespace: ''
+      version_added: 1.39.0
     onepassword_approval:
       description: Sign one short-lived controller-local 1Password approval
       name: onepassword_approval
@@ -132,4 +137,4 @@ plugins:
   strategy: {}
   test: {}
   vars: {}
-version: 1.38.0
+version: 1.39.0

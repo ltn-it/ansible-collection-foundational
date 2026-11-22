@@ -1,6 +1,0 @@
----
-bugfixes:
-  - podman_systemd - apply the lifecycle tag to every loaded teardown preflight task
-    so tag-filtered stops and removals retain the manifest prerequisite.
-  - podman_systemd - recognize joined and separate native log options when validating
-    the loaded teardown source.
