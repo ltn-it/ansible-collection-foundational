@@ -1,6 +1,0 @@
----
-bugfixes:
-  - >-
-    Native 1Password consumers bind the selected registered account to the authenticated
-    desktop current user instead of relying on whoami; exact account, sign-in hostname
-    and operator allowlist checks remain enforced.

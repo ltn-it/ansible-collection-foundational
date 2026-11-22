@@ -1,5 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - require a successful result after stopping a loaded unit even if its fragment disappears, while
-    retaining unchanged stops for units that were already missing and inactive.

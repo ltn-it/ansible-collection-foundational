@@ -391,3 +391,222 @@ releases:
       - central-release-review.yml
       - nexus-candidate-guidance.yml
     release_date: '2026-10-29'
+  1.39.0:
+    changes:
+      bugfixes:
+        - Accept multiword OpenSSH public-key comments from the native Agent without
+          changing fingerprint validation or the single-line, size and key-type boundaries.
+        - Align the isolated native desktop fixture with the authenticated account-list
+          and user-get identity contract, and keep socket-alias fixtures inside the
+          private controller HOME on Linux and macOS.
+        - Allow bounded native encrypted Document transfers larger than 1 MiB to finish
+          within 600 seconds instead of applying the 60-second metadata deadline.
+          Preserve the shorter metadata deadline, byte bounds, desktop authentication
+          and single-use creation approval. Unknown outcomes still require read-only
+          reconciliation before another creation attempt.
+        - Explicitly select native desktop biometric authentication for SSH Key metadata
+          operations, matching the Password client.
+        - Native 1Password consumers bind the selected registered account to the authenticated
+          desktop current user instead of relying on whoami; exact account, sign-in
+          hostname and operator allowlist checks remain enforced.
+        - Native LUKS header custody now revalidates uncached detailed Document metadata
+          before and after downloads, so a concurrent provider revision cannot be
+          hidden by a cached item list.
+        - Native LUKS header custody preserves the approved desktop authentication
+          session when invoking the pinned 1Password CLI. Previously the detached
+          CLI session could reject an operator's completed sign-in. Executor and provider
+          identity checks, bounded I/O and child cleanup remain enforced.
+        - Native header custody and Password-item clients now explicitly select desktop
+          CLI integration and reject session-token backends as before.
+        - Normalize the native Document creation response's uuid field alongside id.
+          Require one valid unambiguous item identifier and retain the separate exact
+          item, vault, revision and complete ciphertext readback checks.
+        - luks_header_custody - accept a verified empty HTTP 204 response for scoped
+          token retirement, while rejecting empty JSON responses and unexpected 204
+          bodies.
+        - luks_header_escrow - bind the controller-only stat to local non-become execution
+          with the current Ansible interpreter and private local temporary directory,
+          preserving source host settings in read-only execution environments.
+        - luks_header_escrow - capture and clean raw header scratch in one bounded
+          managed-side snapshot process shared with revision planning; restrict raw
+          scratch to protected tmpfs.
+        - luks_header_escrow - leave LUKS metadata and UUID inspection in revision
+          planning to the bounded snapshot operation.
+        - luks_header_escrow - preserve integer header sizes in revision receipts
+          on the minimum supported Ansible version.
+        - luks_header_escrow - run the identity precheck with the configured or discovered
+          managed-host Ansible interpreter.
+        - luks_header_snapshot - use a non-EINTR termination exception so Python selectors
+          cannot silently retry handled termination, and reap only the owned cryptsetup
+          process group.
+        - luks_header_snapshot and luks_header_escrow - reject special, oversized
+          or unprotected machine identity files before bounded descriptor reads and
+          cryptsetup execution, using the same private precheck in both callers.
+        - onepassword_secret_item - accept complete 64-character SHA-256 tags and
+          bypass the CLI cache during immutable item metadata checks.
+        - onepassword_ssh_secret_stdin - bind a literal-route SSH host alias to the
+          already validated known-host token, retaining its nondefault port for strict
+          key lookup.
+        - onepassword_ssh_secret_stdin - direct native CLI output into a private anonymous
+          pipe instead of using an output-file path that the CLI attempts to replace;
+          preserve exact-length input, mutable-buffer cleanup and terminal-output
+          isolation.
+        - podman_systemd - Permit stopping an existing service when its prepared log
+          file is missing; native teardown still requires its loaded manifest.
+        - podman_systemd - Reject malformed container and initializer field shapes
+          before replacing a Quadlet.
+        - podman_systemd - Reject removal or stop requests for an active unit whose
+          fragment is unavailable, retaining recovery inputs until teardown can be
+          verified.
+        - podman_systemd - Reject symbolic-link ancestors, foreign-owned directories
+          and group/other-writable parents for native logs.
+        - podman_systemd - Reject trailing-newline log paths and verify effective
+          write access before changing a unit.
+        - podman_systemd - Reject wrapped or unrecognized loaded start commands before
+          teardown instead of treating them as exempt from manifest validation.
+        - podman_systemd - Validate every loaded stop and stop-post command before
+          teardown; reject wrappers or unrelated commands even when another verified
+          native down command is present.
+        - podman_systemd - allow a handoff caller to require that the actual loaded
+          native play/down commands reference its reviewed original manifest.
+        - podman_systemd - apply the lifecycle tag to every loaded teardown preflight
+          task so tag-filtered stops and removals retain the manifest prerequisite.
+        - podman_systemd - avoid a redundant loaded-command lookup and stop for a
+          service already reporting inactive/success; independently verify its successful
+          inactive state before removal.
+        - podman_systemd - bind the actual named Pod and complete live member set
+          to version2 handoff records, recheck before holds and stops, require old
+          Pod absence before startup and validate replacement membership before finalization.
+        - podman_systemd - check runtime write and search access to every atomic-copy
+          destination parent before stopping any handoff application.
+        - podman_systemd - correct the teardown documentation while retaining stop
+          support when only the native log file is absent.
+        - podman_systemd - inspect actual loaded native command arrays for teardown
+          prerequisites, ignore desired logging and manifest drift when stopping,
+          and defer enablement changes until after a confirmed stop so they cannot
+          implicitly reload a pending definition first.
+        - podman_systemd - make repeated stopped requests for an already missing inactive
+          unit idempotent without invoking service management, while retaining the
+          independent activity checks before and after teardown.
+        - podman_systemd - pass the recorded inode and device in the expected argument
+          order to the pre-start log handoff guard; test the rendered shipped command
+          arrays as well as the byte verifier itself.
+        - podman_systemd - perform runtime-owned log inspection, labeling and cleanup
+          with the runtime identity so path replacements cannot redirect privileged
+          file operations.
+        - podman_systemd - preserve Quadlets after stop errors or unconfirmed teardown
+          and skip stopping only a proven missing unit.
+        - podman_systemd - prove that every held log can be opened for reading by
+          the runtime account before stopping any application, including when the
+          destination is empty.
+        - podman_systemd - recognize indented Install and following section headers
+          when disabling a retained Quadlet, preserving unrelated application bytes.
+        - podman_systemd - recognize joined and separate native log options when validating
+          the loaded teardown source.
+        - podman_systemd - reconcile generated-service boot policy through the Quadlet
+          source, including disabled setup and retained definitions after confirmed
+          teardown, without invoking generated-service enable or disable.
+        - podman_systemd - reject ignored native command failures and multiple loaded
+          manifest inputs before service mutation, and resolve the manifest independently
+          of trailing supported boolean options.
+        - podman_systemd - reject native log destinations that resolve to or share
+          file identity with the manifest or Quadlet before rendering.
+        - podman_systemd - reject native-log stop requests with an unreadable teardown
+          manifest before changing the Quadlet or systemd state.
+        - podman_systemd - require a readable teardown manifest before stopping or
+          disabling a loaded native-log unit for removal; allow a proven absent unit.
+        - podman_systemd - require a successful result after stopping a loaded unit
+          even if its fragment disappears, while retaining unchanged stops for units
+          that were already missing and inactive.
+        - podman_systemd - require effective read access to a retained Quadlet before
+          stopping its application, alongside the existing write and search checks.
+        - podman_systemd - require native log files to be owned by the effective runtime
+          UID with mode 0600 before changing the Quadlet or service.
+        - podman_systemd - resolve the executing Ansible interpreter for native log
+          ancestry validation even when the play disables automatic fact gathering.
+        - podman_systemd - reuse the native single-Pod, single-application and empty
+          initializer validation on the original handoff manifest before creating
+          any live hold or stopping a service. Unsupported original Pods must be rejected
+          before teardown can remove unselected container logs.
+        - podman_systemd - stop the existing kube unit without first rewriting its
+          Quadlet or reloading systemd, preserving the existing teardown definition
+          and recovery configuration.
+        - podman_systemd - validate loaded native Kube manifests and failure handling
+          even when the existing service has no explicitly configured logging options.
+        - podman_systemd - verify inactive and successful service state for explicit
+          stopped requests as well as before removal.
+      minor_changes:
+        - Add a default-off signed literal IPv4 route for native recovery while retaining
+          the exact target hostname, Ed25519 host-key pin and disabled proxy/forwarding
+          boundaries.
+        - Preserve existing item, executable, Agent, host-key, signature, replay,
+          secret-lifetime and fixed-command boundaries.
+        - Share exact SSH Key metadata validation and signed SSH recovery stdin consumption
+          between Ansible actions and attested native desktop callers without importing
+          Ansible on the native caller.
+        - luks_header_escrow - add an explicitly enabled revision entrypoint that
+          returns exact source UUID, header size and SHA-256 without a wrapping key
+          or raw-header transfer.
+        - luks_header_key_custody - add an internal primary-first immutable KV2 wrapping-key
+          custody boundary with deferred creation, independent-copy checks and metadata-only
+          receipts.
+        - onepassword_secret_item - share the signed metadata-only Password planner
+          and creator with a native desktop Python API that does not require Ansible.
+        - podman_systemd - add an explicit one-off rootless native log handoff entrypoint
+          with durable source identities, all-source pre-stop checks, closed-file
+          copying, and prefix verification before retained files are finalized. It
+          installs no helper executable, logging service, timer, or rotation mechanism.
+        - podman_systemd - add an optional prepared native k8s-file log destination
+          for one application container in one Pod, preserving stable paths across
+          kube replacements without a capture helper or additional root service.
+      security_fixes:
+        - Stop returning a password-derived digest in public Header-key custody receipts;
+          retain immutable backend references and internal constant-time key readback
+          verification.
+    fragments:
+      - loaded-teardown-command-shape.yml
+      - loaded-teardown-tags-and-option-forms.yml
+      - luks-header-controller-private-temp.yml
+      - luks-header-custody-documentation.yml
+      - luks-header-key-custody.yml
+      - luks-header-key-public-receipt.yml
+      - luks-header-native-document-create-uuid.yml
+      - luks-header-native-document-freshness.yml
+      - luks-header-native-large-document-timeout.yml
+      - luks-header-revision-discovery-timeout.yml
+      - luks-header-revision-snapshot.yml
+      - luks-header-vault-no-content.yml
+      - luks-source-identity-bounded.yml
+      - native-desktop-auth-session.yml
+      - native-desktop-authenticated-identity.yml
+      - native-desktop-backend-explicit.yml
+      - native-desktop-linux-consumer-fixtures.yml
+      - native-secret-private-pipe.yml
+      - native-ssh-port-host-alias.yml
+      - native-ssh-recovery-consumer.yml
+      - onepassword-native-password-item.yml
+      - podman-disappearing-stop-result.yml
+      - podman-handoff-runtime-boundaries.yml
+      - podman-held-log-readable.yml
+      - podman-loaded-teardown.yml
+      - podman-log-definitions-and-quadlet-boot-policy.yml
+      - podman-log-handoff-original-manifest.yml
+      - podman-missing-inactive-stop.yml
+      - podman-native-file-owner-and-mode.yml
+      - podman-native-stop-manifest-prerequisite.yml
+      - podman-retained-quadlet-readable-sections.yml
+      - podman-stopped-keeps-loaded-configuration.yml
+      - podman-successfully-inactive-teardown.yml
+      - podman-systemd-confirmed-stop.yml
+      - podman-systemd-confirmed-teardown.yml
+      - podman-systemd-discovered-log-interpreter.yml
+      - podman-systemd-log-handoff.yml
+      - podman-systemd-log-validation.yml
+      - podman-systemd-native-log-ancestry.yml
+      - podman-systemd-native-log-path.yml
+      - podman-systemd-removal-manifest-preflight.yml
+    modules:
+      - description: Capture a bounded LUKS2 header revision on the managed host.
+        name: luks_header_snapshot
+        namespace: ''
+    release_date: '2026-11-22'

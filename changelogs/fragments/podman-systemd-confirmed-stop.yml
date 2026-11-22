@@ -1,5 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - verify inactive and successful service state for explicit
-    stopped requests as well as before removal.

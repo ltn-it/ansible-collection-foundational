@@ -1,6 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - avoid a redundant loaded-command lookup and stop for a service
-    already reporting inactive/success; independently verify its successful inactive
-    state before removal.
