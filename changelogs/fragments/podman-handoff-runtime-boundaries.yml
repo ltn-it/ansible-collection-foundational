@@ -1,9 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - perform runtime-owned log inspection, labeling and cleanup
-    with the runtime identity so path replacements cannot redirect privileged file operations.
-  - >-
-    podman_systemd - bind the actual named Pod and complete live member set to
-    version2 handoff records, recheck before holds and stops, require old Pod absence
-    before startup and validate replacement membership before finalization.

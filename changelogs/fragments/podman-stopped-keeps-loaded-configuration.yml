@@ -1,4 +1,0 @@
----
-bugfixes:
-  - podman_systemd - stop the existing kube unit without first rewriting its Quadlet or reloading systemd,
-    preserving the existing teardown definition and recovery configuration.

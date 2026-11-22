@@ -1,7 +1,0 @@
----
-bugfixes:
-  - >-
-    podman_systemd - reuse the native single-Pod, single-application and empty
-    initializer validation on the original handoff manifest before creating any
-    live hold or stopping a service. Unsupported original Pods must be rejected
-    before teardown can remove unselected container logs.
