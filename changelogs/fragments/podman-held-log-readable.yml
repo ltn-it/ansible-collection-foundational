@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - prove that every held log can be opened for reading by the
+    runtime account before stopping any application, including when the destination is empty.

@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    onepassword_ssh_secret_stdin - bind a literal-route SSH host alias to the already
+    validated known-host token, retaining its nondefault port for strict key lookup.

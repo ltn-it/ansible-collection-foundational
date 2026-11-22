@@ -11,7 +11,7 @@ import pytest
 
 from ansible.errors import AnsibleActionFail
 
-from plugins.action import onepassword_ssh_secret_stdin as plugin
+from plugins.module_utils import onepassword_ssh_secret_stdin as plugin
 from tests.unit.plugins.action.onepassword_approval_support import (
     build_approval,
     build_authority,
@@ -116,6 +116,8 @@ def _approval(tmp_path, arguments, authority):
             "remote_command": arguments["remote_command"],
         },
     }
+    if arguments.get("destination_address"):
+        binding["destination"]["address"] = arguments["destination_address"]
     approval, _unused_replay, _unused_now = build_approval(
         tmp_path,
         authority,
@@ -190,28 +192,33 @@ def _write_executable(path, source):
     path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
 
-def _write_valid_known_hosts(tmp_path):
+def _write_valid_known_hosts(tmp_path, port=2222):
     path = tmp_path / "known_hosts"
+    host_token = SUBJECT if port == 22 else "[{0}]:{1}".format(SUBJECT, port)
     path.write_text(
-        "[{0}]:2222 {1}\n".format(SUBJECT, HOST_PUBLIC_KEY), encoding="ascii"
+        "{0} {1}\n".format(host_token, HOST_PUBLIC_KEY), encoding="ascii"
     )
     path.chmod(0o600)
     return path
 
 
+@pytest.mark.parametrize(
+    ("destination_address", "destination_port"),
+    [("", 2222), ("127.0.0.1", 2222), ("192.0.2.42", 2222), ("127.0.0.1", 22)],
+)
 def test_consumer_keeps_secret_out_of_result_and_process_arguments(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, destination_address, destination_port
 ):
     marker = tmp_path / "ssh-success"
     op_path = tmp_path / "op"
     ssh_path = tmp_path / "ssh"
-    _write_valid_known_hosts(tmp_path)
+    _write_valid_known_hosts(tmp_path, destination_port)
     _write_executable(
         op_path,
         "import os, sys\n"
         "args = sys.argv[1:]\n"
-        "descriptor = int(args[args.index('--out-file') + 1].rsplit('/', 1)[1])\n"
-        "os.write(descriptor, {0!r})\n".format(SECRET),
+        "assert '--out-file' not in args\n"
+        "os.write(1, {0!r})\n".format(SECRET),
     )
     _write_executable(
         ssh_path,
@@ -245,14 +252,26 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
                 "StrictHostKeyChecking=yes",
                 "UpdateHostKeys=no",
                 "VerifyHostKeyDNS=no",
-            },
+            } | (
+                {
+                    "Hostname=" + destination_address,
+                    "HostKeyAlias=" + (
+                        SUBJECT if destination_port == 22
+                        else "[{0}]:{1}".format(SUBJECT, destination_port)
+                    ),
+                }
+                if destination_address else set()
+            ),
             SECRET,
             str(marker),
         ),
     )
     agent_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     agent_socket.bind(str(tmp_path / "agent.sock"))
-    config = plugin._normalize_arguments(_arguments(tmp_path))
+    arguments = _arguments(
+        tmp_path, destination_address=destination_address, destination_port=destination_port
+    )
+    config = plugin._normalize_arguments(arguments)
     fake_client = SimpleNamespace(
         requested_binary=str(op_path),
         binary=str(op_path),
@@ -278,7 +297,7 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
         lambda client, config, public_identity, operator: None,
     )
     try:
-        result = plugin._consume(config)
+        result = plugin.execute_native(arguments)
     finally:
         agent_socket.close()
 
@@ -286,16 +305,68 @@ def test_consumer_keeps_secret_out_of_result_and_process_arguments(
     assert result["changed"] is True
     assert result["operator_user_uuid"] == USER_UUID
     assert result["core_dumps_disabled"] is True
+    if destination_address:
+        assert result["destination_address"] == destination_address
+    else:
+        assert "destination_address" not in result
     assert marker.read_text(encoding="utf-8") == "ok"
     assert SECRET.decode("ascii") not in repr(result)
     assert len(list((tmp_path / "replay").glob("*.used"))) == 1
 
 
-def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch):
+def test_empty_route_preserves_the_original_signed_destination_binding(tmp_path):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path)
+    original = plugin._normalize_arguments(arguments)
+    explicit_empty = plugin._normalize_arguments(dict(arguments, destination_address=""))
+    assert plugin._approval_binding(original) == plugin._approval_binding(explicit_empty)
+    assert set(plugin._approval_binding(original)["destination"]) == {
+        "host", "user", "port", "host_fingerprint", "remote_command"
+    }
+
+
+@pytest.mark.parametrize("address", [
+    None, True, False, 123, [], {}, "localhost", "127.1", "127.000.0.1",
+    " 127.0.0.1", "127.0.0.1 ", "127.0.0.1\n", "::1", "0.0.0.0",
+    "224.0.0.1", "255.255.255.255", "127.0.0.1%en0", "127.0.0.1;echo", "*",
+])
+def test_invalid_routing_address_is_rejected_before_provider_use(tmp_path, monkeypatch, address):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=address)
+    monkeypatch.setattr(plugin, "_inspect_boundaries", lambda *args: pytest.fail("provider reached"))
+    with pytest.raises(AnsibleActionFail):
+        plugin.execute_native(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+@pytest.mark.parametrize("signed,modified", [
+    ("", "127.0.0.1"), ("127.0.0.1", "192.0.2.42"), ("127.0.0.1", ""),
+])
+def test_route_addition_replacement_and_removal_invalidate_signature(tmp_path, monkeypatch, signed, modified):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address=signed)
+    arguments["destination_address"] = modified
+    monkeypatch.setattr(plugin, "_inspect_boundaries", lambda *args: pytest.fail("provider reached"))
+    with pytest.raises(AnsibleActionFail):
+        plugin.execute_native(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+def test_deleting_a_signed_route_cannot_downgrade_to_the_legacy_contract(tmp_path):
+    _write_valid_known_hosts(tmp_path)
+    arguments = _arguments(tmp_path, destination_address="127.0.0.1")
+    del arguments["destination_address"]
+    with pytest.raises(AnsibleActionFail):
+        plugin._normalize_arguments(arguments)
+    assert not list((tmp_path / "replay").glob("*.used"))
+
+
+@pytest.mark.parametrize("destination_address", ["", "127.0.0.1"])
+def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch, destination_address):
     ssh_path = tmp_path / "ssh"
     _write_executable(ssh_path, "raise SystemExit(99)\n")
     _write_valid_known_hosts(tmp_path)
-    config = plugin._normalize_arguments(_arguments(tmp_path))
+    arguments = _arguments(tmp_path, destination_address=destination_address)
     monkeypatch.setattr(
         plugin,
         "_inspect_boundaries",
@@ -311,7 +382,7 @@ def test_check_mode_never_claims_reads_or_connects(tmp_path, monkeypatch):
         lambda *unused: pytest.fail("check mode read a secret"),
     )
 
-    result = plugin._consume(config, check_mode=True)
+    result = plugin.execute_native(arguments, check_mode=True)
 
     assert result["unlocked"] is False
     assert result["changed"] is False
@@ -398,8 +469,8 @@ def test_secret_reader_uses_mutable_readv_and_rejects_short_or_oversized_values(
             op_path,
             "import os, sys\n"
             "args = sys.argv[1:]\n"
-            "fd = int(args[args.index('--out-file') + 1].rsplit('/', 1)[1])\n"
-            "os.write(fd, {0!r})\n".format(payload),
+            "assert '--out-file' not in args\n"
+            "os.write(1, {0!r})\n".format(payload),
         )
         client = SimpleNamespace(
             requested_binary=str(op_path),
@@ -409,6 +480,41 @@ def test_secret_reader_uses_mutable_readv_and_rejects_short_or_oversized_values(
         )
         with pytest.raises(AnsibleActionFail):
             plugin._read_secret_bytes(client, password_config)
+
+
+def test_secret_reader_supports_vendor_cli_rejecting_fd_output_paths(tmp_path, capfd):
+    """The native CLI unlinks --out-file paths; its stdout must stay private."""
+    op_path = tmp_path / "op"
+    _write_executable(
+        op_path,
+        "import os, stat, sys\n"
+        "if '--out-file' in sys.argv:\n"
+        "    sys.stderr.write('could not delete inherited fd: operation not permitted')\n"
+        "    raise SystemExit(37)\n"
+        "if os.isatty(1) or not stat.S_ISFIFO(os.fstat(1).st_mode):\n"
+        "    raise SystemExit(38)\n"
+        "os.write(1, {0!r})\n".format(SECRET),
+    )
+    client = SimpleNamespace(
+        requested_binary=str(op_path),
+        binary=str(op_path),
+        binary_sha256=hashlib.sha256(op_path.read_bytes()).hexdigest(),
+        environment={"HOME": str(tmp_path), "PATH": os.environ["PATH"]},
+    )
+    password_config = {
+        "vault_id": VAULT_ID,
+        "item_id": PASSWORD_ITEM_ID,
+        "field_id": "password",
+        "account_id": ACCOUNT_ID,
+        "password_length": 64,
+    }
+    secret = plugin._read_secret_bytes(client, password_config)
+    try:
+        assert isinstance(secret, bytearray) and secret == SECRET
+        captured = capfd.readouterr()
+        assert captured.out == "" and captured.err == ""
+    finally:
+        secret[:] = b"\0" * len(secret)
 
 
 def test_core_dump_boundary_sets_and_verifies_zero(monkeypatch):

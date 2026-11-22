@@ -1,0 +1,6 @@
+---
+bugfixes:
+  - >-
+    luks_header_escrow - bind the controller-only stat to local non-become
+    execution with the current Ansible interpreter and private local temporary
+    directory, preserving source host settings in read-only execution environments.

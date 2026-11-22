@@ -15,6 +15,7 @@ from ansible.plugins.action import ActionBase
 
 from ._onepassword_boundary import (
     claim_approval,
+    native_desktop_identity,
     normalize_approval,
     normalize_user_uuid_list,
     normalize_sha256,
@@ -394,10 +395,13 @@ class _OnePasswordVaultCoManagerStore:
         if version != config["cli_version"]:
             _fail("The controller 1Password CLI version does not match cli_version.")
 
-        identity = self.client.metadata(
-            ["whoami", "--account", config["account_id"], "--format", "json"],
-            "desktop identity verification",
-        )
+        try:
+            identity = native_desktop_identity(
+                lambda args: self.client.metadata(args, "desktop identity verification"),
+                config["account_id"],
+            )
+        except ValueError:
+            _fail("The authenticated desktop account or user identity is invalid.")
         if (
             not isinstance(identity, dict)
             or identity.get("account_uuid") != config["account_id"]

@@ -92,14 +92,17 @@ class NativeExchangeTests(unittest.TestCase):
             binary.write_text(
                 "#!" + sys.executable + "\nimport json, sys\na=sys.argv[1:]\n"
                 "if a == ['--version']: print('2.38.1')\n"
-                "elif a[0] == 'whoami': print(json.dumps("
+                "elif a[:2] == ['account','list']: print(json.dumps("
                 + repr(
-                    {
+                    [{
                         "account_uuid": cfg["account_id"],
                         "user_uuid": "U" * 26,
-                        "url": "https://example.1password.com",
-                    }
+                        "url": cfg["account_sign_in_address"],
+                    }]
                 )
+                + "))\n"
+                "elif a[:3] == ['user','get','--me']: print(json.dumps("
+                + repr({"id": "U" * 26})
                 + "))\n"
                 "elif a[:2] == ['vault','get']: print(json.dumps("
                 + repr({"id": cfg["vault_id"]})

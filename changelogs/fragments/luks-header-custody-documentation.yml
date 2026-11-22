@@ -1,0 +1,4 @@
+---
+trivial:
+  - Align the key-custody receipt documentation with its metadata-only return
+    contract and record the snapshot module's first release as 1.39.0.

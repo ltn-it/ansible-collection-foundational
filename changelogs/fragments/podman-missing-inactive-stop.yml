@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - make repeated stopped requests for an already missing inactive unit idempotent without invoking
+    service management, while retaining the independent activity checks before and after teardown.

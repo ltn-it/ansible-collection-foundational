@@ -309,6 +309,10 @@ class VaultHTTP:
                 payload = response.read(1024 * 1024 + 1)
                 if len(payload) > 1024 * 1024:
                     raise ValueError("Vault response exceeds its bound.")
+                if response.status == 204:
+                    if payload:
+                        raise ValueError("Unexpected body in a Vault no-content response.")
+                    return {}
                 return json.loads(payload, object_pairs_hook=unique_object)
         except urllib.error.HTTPError as error:
             if missing_ok and error.code == 404:

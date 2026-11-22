@@ -1,0 +1,184 @@
+---
+- name: Read the held source and original definition and destination before any stop
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - '{{ podman_systemd_h_stage }}/held.log'
+    - '{{ podman_systemd_h_stage }}'
+    - '{{ podman_systemd_h_spec.manifest }}'
+    - '{{ podman_systemd_h_spec.quadlet }}'
+    - '{{ podman_systemd_h_log }}'
+    - '{{ podman_systemd_h_saved[podman_systemd_h_name].log }}'
+  register: podman_systemd_h_guard_stats
+- name: Require every planned hold and private original directory before any stop
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_guard_stats.results[0].stat.exists
+      - podman_systemd_h_guard_stats.results[0].stat.isreg | default(false)
+      - not podman_systemd_h_guard_stats.results[0].stat.islnk | default(true)
+      - >-
+        podman_systemd_h_guard_stats.results[0].stat.uid | default(-1) == podman_systemd_log_handoff_profile.runtime_uid
+      - >-
+        podman_systemd_h_guard_stats.results[0].stat.inode | default(-1) ==
+        podman_systemd_h_saved[podman_systemd_h_name].source_inode
+      - >-
+        podman_systemd_h_guard_stats.results[0].stat.dev | default(-1) ==
+        podman_systemd_h_saved[podman_systemd_h_name].source_dev
+      - podman_systemd_h_guard_stats.results[0].stat.nlink | default(-1) in [1, 2]
+      - podman_systemd_h_guard_stats.results[1].stat.isdir
+      - not podman_systemd_h_guard_stats.results[1].stat.islnk
+      - >-
+        podman_systemd_h_guard_stats.results[1].stat.uid == podman_systemd_log_handoff_profile.runtime_uid
+      - podman_systemd_h_guard_stats.results[1].stat.mode == '0700'
+      - >-
+        podman_systemd_h_guard_stats.results[1].stat.inode == podman_systemd_h_saved[podman_systemd_h_name].stage_inode
+      - podman_systemd_h_guard_stats.results[2].stat.isreg
+      - not podman_systemd_h_guard_stats.results[2].stat.islnk
+      - podman_systemd_h_guard_stats.results[2].stat.nlink == 1
+      - podman_systemd_h_guard_stats.results[3].stat.isreg
+      - not podman_systemd_h_guard_stats.results[3].stat.islnk
+      - podman_systemd_h_guard_stats.results[3].stat.nlink == 1
+      - podman_systemd_h_guard_stats.results[4].stat.isreg
+      - not podman_systemd_h_guard_stats.results[4].stat.islnk
+      - >-
+        podman_systemd_h_guard_stats.results[4].stat.uid == podman_systemd_log_handoff_profile.runtime_uid
+      - podman_systemd_h_guard_stats.results[4].stat.nlink == 1
+      - podman_systemd_h_guard_stats.results[4].stat.mode == '0600'
+    quiet: true
+- name: Read the actual current activity and original container identity
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - --user
+      - show
+      - '{{ podman_systemd_h_spec.unit }}.service'
+      - --property=ActiveState
+      - --value
+  register: podman_systemd_h_activity
+  changed_when: false
+- name: Read only current native application metadata
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - inspect
+      - '{{ podman_systemd_h_spec.container }}'
+      - --format
+      - >-
+        {{ "{{.Id}} {{.State.Running}} {{.State.ConmonPid}} {{.HostConfig.LogConfig.Path}}
+        {{.Config.Labels.PODMAN_SYSTEMD_UNIT}}"
+        }}
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_copy_current
+  changed_when: false
+  failed_when: false
+- name: Distinguish an absent container from an engine or access error
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - container
+      - exists
+      - '{{ podman_systemd_h_spec.container }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_copy_exists
+  changed_when: false
+  failed_when: podman_systemd_h_copy_exists.rc not in [0, 1]
+- name: Require an unchanged original writer or an already removed inactive source
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_activity.stdout | trim in ['active', 'inactive']
+      - >-
+        (podman_systemd_h_activity.stdout | trim == 'inactive' and podman_systemd_h_copy_exists.rc == 1 and
+        podman_systemd_h_copy_current.rc != 0) or (podman_systemd_h_activity.stdout | trim == 'active' and
+        podman_systemd_h_copy_exists.rc
+        == 0 and podman_systemd_h_copy_current.rc == 0 and podman_systemd_h_copy_current.stdout.split() ==
+        [podman_systemd_h_saved[podman_systemd_h_name].id,
+        'true', podman_systemd_h_saved[podman_systemd_h_name].conmon, podman_systemd_h_saved[podman_systemd_h_name].log,
+        podman_systemd_h_spec.unit ~ '.service'] and podman_systemd_h_guard_stats.results[5].stat.exists and
+        podman_systemd_h_guard_stats.results[5].stat.inode == podman_systemd_h_saved[podman_systemd_h_name].source_inode
+        and podman_systemd_h_guard_stats.results[5].stat.dev == podman_systemd_h_saved[podman_systemd_h_name].source_dev
+        and podman_systemd_h_guard_stats.results[5].stat.nlink == 2)
+    quiet: true
+- name: Recheck the original live Pod or prove its complete prior removal before any stop
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_saved[podman_systemd_h_name].id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_saved[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: resume
+- name: Require the same live process start before any stop
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import pathlib,sys
+        process=pathlib.Path("/proc/"+sys.argv[1]+"/stat")
+        print(process.read_text().rsplit(")",1)[1].split()[19])
+      - '{{ podman_systemd_h_saved[podman_systemd_h_name].conmon }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_copy_start
+  changed_when: false
+  failed_when: >-
+    podman_systemd_h_copy_start.rc != 0 or podman_systemd_h_copy_start.stdout | trim !=
+    podman_systemd_h_saved[podman_systemd_h_name].start
+  when: podman_systemd_h_activity.stdout | trim == 'active'
+- name: Verify immutable manifest and definition hashes and acceptable prior destination bytes
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import hashlib,os,pathlib,sys
+        def digest(path):
+            h=hashlib.sha256()
+            with pathlib.Path(path).open('rb') as data:
+                for chunk in iter(lambda:data.read(1024*1024),b''):
+                    h.update(chunk)
+            return h.hexdigest()
+        if digest(sys.argv[1])!=sys.argv[2] or digest(sys.argv[3])!=sys.argv[4]:
+            raise RuntimeError('ORIGINAL_DEFINITION_CHANGED')
+        target=pathlib.Path(sys.argv[5]);held=pathlib.Path(sys.argv[6])
+        if not os.access(target.parent, os.W_OK | os.X_OK):
+            raise RuntimeError('DESTINATION_PARENT_NOT_WRITABLE_OR_SEARCHABLE')
+        with held.open('rb'):
+            pass
+        if target.stat().st_size:
+            if sys.argv[7]!='inactive' or digest(target)!=digest(held):
+                raise RuntimeError('UNRECOGNIZED_EXISTING_DESTINATION')
+      - '{{ podman_systemd_h_spec.manifest }}'
+      - '{{ podman_systemd_h_saved[podman_systemd_h_name].manifest_sha256 }}'
+      - '{{ podman_systemd_h_spec.quadlet }}'
+      - '{{ podman_systemd_h_saved[podman_systemd_h_name].quadlet_sha256 }}'
+      - '{{ podman_systemd_h_log }}'
+      - '{{ podman_systemd_h_stage }}/held.log'
+      - '{{ podman_systemd_h_activity.stdout | trim }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  changed_when: false
+- name: Validate the actual loaded native stop commands before any application is stopped
+  ansible.builtin.include_role:
+    name: lit.foundational.podman_systemd
+    tasks_from: teardown_preflight
+    apply:
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  vars:
+    podman_systemd_scope: user
+    podman_systemd_unit_name: '{{ podman_systemd_h_spec.unit }}'
+    podman_systemd_teardown_expected_manifest: '{{ podman_systemd_h_spec.manifest }}'
+  when: podman_systemd_h_activity.stdout | trim == 'active'

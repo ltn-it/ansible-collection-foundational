@@ -1,0 +1,8 @@
+---
+bugfixes:
+  - >-
+    Allow bounded native encrypted Document transfers larger than 1 MiB to
+    finish within 600 seconds instead of applying the 60-second metadata
+    deadline. Preserve the shorter metadata deadline, byte bounds, desktop
+    authentication and single-use creation approval. Unknown outcomes still
+    require read-only reconciliation before another creation attempt.

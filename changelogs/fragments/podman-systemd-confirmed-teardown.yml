@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - preserve Quadlets after stop errors or unconfirmed teardown
+    and skip stopping only a proven missing unit.

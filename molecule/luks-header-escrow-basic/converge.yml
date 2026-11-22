@@ -50,6 +50,17 @@
         luks_header_escrow_remote_temporary_root: >-
           {{ luks_header_escrow_molecule_runtime_root }}
 
+    - name: Inspect the exact revision without a wrapping key or ciphertext destination
+      ansible.builtin.include_role:
+        name: lit.foundational.luks_header_escrow
+        tasks_from: revision
+      vars:
+        luks_header_escrow_revision_enabled: true
+        luks_header_escrow_crypttab_path: "{{ luks_header_escrow_molecule_fixture_root }}/crypttab"
+        luks_header_escrow_findfs_path: "{{ luks_header_escrow_molecule_fixture_root }}/findfs"
+        luks_header_escrow_remote_temporary_root: "{{ luks_header_escrow_molecule_runtime_root }}"
+        luks_header_escrow_allow_regular_file_device: true
+
     - name: Persist the real LUKS2 fixture header as immutable ciphertext
       ansible.builtin.include_role:
         name: lit.foundational.luks_header_escrow
@@ -80,3 +91,29 @@
             luks_header_escrow_result.luks_uuid
             == '11111111-2222-4333-8444-555555555555'
         quiet: true
+
+    - name: Decrypt only the synthetic fixture for revision equality
+      ansible.builtin.include_vars:
+        file: "{{ luks_header_escrow_molecule_path }}"
+        name: luks_header_escrow_molecule_revision_document
+      no_log: true
+
+    - name: Require metadata planning to match the actual encrypted capture
+      ansible.builtin.assert:
+        that:
+          - >-
+            luks_header_escrow_revision_result.header_sha256
+            == luks_header_escrow_molecule_revision_document.luks_header_sha256_raw
+          - >-
+            luks_header_escrow_revision_result.raw_size_bytes
+            == luks_header_escrow_molecule_revision_document.luks_header_raw_size_bytes
+          - luks_header_escrow_revision_result.scratch_removed is sameas true
+          - "'luks_header_b64' not in luks_header_escrow_revision_result"
+        quiet: true
+      no_log: true
+
+    - name: Clear protected fixture verification memory
+      ansible.builtin.set_fact:
+        luks_header_escrow_molecule_revision_document: null
+      changed_when: false
+      no_log: true

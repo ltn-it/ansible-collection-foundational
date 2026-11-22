@@ -21,6 +21,10 @@
       - luks_header_escrow_subject | trim | length > 0
       - luks_header_escrow_expected_uuid is string
       - luks_header_escrow_expected_uuid == '' or luks_header_escrow_expected_uuid | length == 36
+      - luks_header_escrow_expected_header_sha256 is string
+      - >-
+        luks_header_escrow_expected_header_sha256 == ''
+        or luks_header_escrow_expected_header_sha256 is match('^[0-9a-f]{64}$')
       - luks_header_escrow_expected_machine_id is string
       - >-
         luks_header_escrow_expected_machine_id == ''
@@ -47,6 +51,9 @@
       - luks_header_escrow_remote_temporary_root is string
       - luks_header_escrow_remote_temporary_root is match('^/')
       - luks_header_escrow_allow_regular_file_device is boolean
+      - luks_header_escrow_timeout_seconds | type_debug == 'int'
+      - luks_header_escrow_timeout_seconds >= 1
+      - luks_header_escrow_timeout_seconds <= 60
       - not ansible_check_mode
     fail_msg: >-
       Enabled LUKS-header escrow requires schema version 1, a safe positive

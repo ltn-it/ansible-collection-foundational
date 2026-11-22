@@ -74,6 +74,45 @@ def _fail(message):
     raise AnsibleActionFail(message)
 
 
+def native_desktop_identity(metadata, account_id):
+    """Bind one registered account to its authenticated desktop current user.
+
+    ``whoami`` is not a reliable desktop-mode authentication probe. Registry
+    metadata alone is not authentication: query the account-scoped current user
+    and require equality before returning identity to a consumer's allowlist.
+    Only metadata commands are issued, never item reads or a login retry.
+    """
+    uuid = re.compile(r"[A-Z0-9]{26}\Z", re.ASCII)
+    if not isinstance(account_id, str) or not uuid.fullmatch(account_id):
+        raise ValueError("Exact native account identity is required.")
+    rows = metadata(["account", "list", "--format", "json"])
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("Invalid native account metadata.")
+    selected = [row for row in rows if row.get("account_uuid") == account_id]
+    if len(selected) != 1:
+        raise ValueError("Missing or ambiguous native account identity.")
+    account = selected[0]
+    user_id, address = account.get("user_uuid"), account.get("url")
+    if not isinstance(user_id, str) or not uuid.fullmatch(user_id):
+        raise ValueError("Invalid registered native user identity.")
+    # The CLI registry returns a bare hostname; older responses included HTTPS.
+    # Reject credentials, HTTP, ports, paths, query strings and whitespace.
+    match = re.fullmatch(
+        r"(?:https://)?([A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)/?",
+        address,
+        flags=re.ASCII | re.IGNORECASE,
+    ) if isinstance(address, str) else None
+    if not match:
+        raise ValueError("Invalid native account sign-in address.")
+    current = metadata(
+        ["user", "get", "--me", "--account", account_id, "--format", "json"]
+    )
+    if not isinstance(current, dict) or current.get("id") != user_id:
+        raise ValueError("Authenticated native user identity drift.")
+    return {"account_uuid": account_id, "user_uuid": user_id,
+            "url": "https://" + match.group(1).lower()}
+
+
 def normalize_sha256(value, name):
     """Require one complete lowercase SHA-256 digest."""
     if not isinstance(value, str) or not _DIGEST_PATTERN.fullmatch(value):

@@ -1,0 +1,258 @@
+"""Real cryptsetup snapshot tests and bounded managed-side failure cleanup."""
+
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+
+import yaml
+
+from plugins.module_utils.luks_header_snapshot import snapshot
+
+
+UUID = "11111111-2222-4333-8444-555555555555"
+
+
+class SnapshotTests(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory(prefix="snapshot-unit-", dir="/dev/shm")
+        self.executable_root = tempfile.TemporaryDirectory(prefix="snapshot-cli-", dir=os.environ["HOME"])
+        self.root = Path(self.scratch.name)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.device = self.root / "disk.img"
+        with self.device.open("wb") as stream:
+            stream.truncate(32 * 1024 * 1024)
+        self.identity = Path(self.executable_root.name) / "machine-id"
+        self.identity.write_text("a" * 32 + "\n")
+        self.options = dict(device=str(self.device), expected_uuid=UUID, temporary_root=str(self.runtime),
+                            allow_regular_file_device=True, expected_machine_id="a" * 32,
+                            machine_id_path=str(self.identity))
+
+    def tearDown(self):
+        self.scratch.cleanup()
+        self.executable_root.cleanup()
+
+    def no_raw_scratch(self):
+        self.assertEqual(list(self.runtime.iterdir()), [])
+
+    def fake_cli(self, mode):
+        binary = Path(self.executable_root.name) / "cryptsetup"
+        marker = Path(self.executable_root.name) / "started"
+        source = '''import json, os, pathlib, sys, time
+args=sys.argv[1:]
+if args[0]=='luksUUID':print(EXPECTED_UUID)
+elif args[0]=='luksDump':print('{}')
+elif args[0]=='luksHeaderBackup':
+ path=pathlib.Path(args[-1]);path.write_bytes(b'SYNTHETIC_RAW_HEADER'*64);path.chmod(0o400)
+ pathlib.Path(MARKER).write_text(str(os.getpid()))
+ if MODE=='fail':raise SystemExit(7)
+ if MODE=='sleep':time.sleep(60)
+ if MODE=='permissions':path.chmod(0o600)
+ if MODE=='hardlink':os.link(path,path.parent/'another-link')
+else:raise SystemExit(8)
+'''.replace("EXPECTED_UUID", repr(UUID)).replace("MARKER", repr(str(marker))).replace("MODE", repr(mode))
+        binary.write_text("#!" + sys.executable + "\n" + source)
+        binary.chmod(0o700)
+        return str(binary), marker
+
+    def test_real_metadata_matches_payload_and_device_remains_unchanged(self):
+        subprocess.run(
+            ["/usr/sbin/cryptsetup", "luksFormat", "--batch-mode", "--type", "luks2", "--uuid", UUID,
+             "--key-file", "-", "--pbkdf", "pbkdf2", "--pbkdf-force-iterations", "1000", str(self.device)],
+            input=b"SYNTHETIC_DISK_KEY_FOR_UNIT_ONLY", check=True, capture_output=True, timeout=30,
+        )
+        before = hashlib.sha256(self.device.read_bytes()).hexdigest()
+        metadata = snapshot(**self.options)
+        self.assertEqual(set(metadata), {"luks_uuid", "raw_size_bytes", "raw_sha256", "scratch_removed"})
+        self.no_raw_scratch()
+        payload = snapshot(**self.options, include_payload=True, expected_sha256=metadata["raw_sha256"])
+        raw = base64.b64decode(payload.pop("luks_header_b64"), validate=True)
+        self.assertEqual(payload, metadata)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), metadata["raw_sha256"])
+        self.assertEqual(len(raw), metadata["raw_size_bytes"])
+        self.assertEqual(hashlib.sha256(self.device.read_bytes()).hexdigest(), before)
+        self.no_raw_scratch()
+
+    def test_changed_planned_hash_is_rejected_before_payload_return_and_cleaned(self):
+        binary, marker = self.fake_cli("valid")
+        with self.assertRaisesRegex(ValueError, "revision changed before payload transfer"):
+            snapshot(**self.options, cryptsetup_path=binary, include_payload=True, expected_sha256="e" * 64)
+        self.assertTrue(marker.exists())
+        self.no_raw_scratch()
+
+    def test_wrong_machine_is_rejected_before_snapshot_commands(self):
+        binary, marker = self.fake_cli("fail")
+        with self.assertRaisesRegex(ValueError, "Wrong source machine"):
+            snapshot(**{**self.options, "expected_machine_id": "b" * 32}, cryptsetup_path=binary)
+        self.assertFalse(marker.exists())
+        self.no_raw_scratch()
+
+    def test_fifo_machine_identity_is_refused_without_blocking_or_starting_crypto(self):
+        binary, marker = self.fake_cli("valid")
+        fifo = Path(self.executable_root.name) / "identity-fifo"
+        os.mkfifo(fifo)
+        options = {**self.options, "machine_id_path": str(fifo), "cryptsetup_path": binary}
+        program = '''import json,sys
+sys.path.insert(0,sys.argv[1])
+from plugins.module_utils.luks_header_snapshot import snapshot
+try:snapshot(**json.loads(sys.argv[2]))
+except ValueError:sys.exit(23)
+raise SystemExit('Non-regular machine identity was accepted')
+'''
+        root = str(Path(__file__).resolve().parents[2])
+        child = subprocess.Popen([sys.executable, "-I", "-S", "-c", program, root, json.dumps(options)],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            try:
+                output, errors = child.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.fail("Machine identity FIFO blocked before the bounded snapshot lifecycle")
+            self.assertEqual(child.returncode, 23, (output + errors).decode(errors="replace"))
+            self.assertFalse(marker.exists())
+            self.no_raw_scratch()
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.wait()
+            child.stdout.close()
+            child.stderr.close()
+
+    def test_oversized_machine_identity_is_refused_before_crypto(self):
+        binary, marker = self.fake_cli("valid")
+        self.identity.write_text(" " * 1000000 + "a" * 32 + "\n")
+        with self.assertRaisesRegex(ValueError, "Wrong source machine"):
+            snapshot(**self.options, cryptsetup_path=binary)
+        self.assertFalse(marker.exists())
+        self.no_raw_scratch()
+
+    def test_real_role_precheck_rejects_fifo_and_oversize_before_later_tasks(self):
+        root = Path(self.executable_root.name)
+        repository = Path(__file__).resolve().parents[2]
+        role = repository / "roles/luks_header_escrow"
+        tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
+        check = next(task for task in tasks if task["name"] ==
+                     "Require the pinned source machine through the bounded shared precheck")
+        fifo = root / "role-identity-fifo"
+        os.mkfifo(fifo)
+        oversized = root / "role-identity-oversized"
+        oversized.write_text(" " * 1000 + "a" * 32 + "\n")
+        marker = root / "passed-precheck"
+        selected = root / "selected-interpreter-used"
+        interpreter = root / "configured-python"
+        interpreter.write_text("#!/bin/sh\nprintf 'selected\\n' >> '" + str(selected)
+                               + "'\nexec '" + sys.executable + "' \"$@\"\n")
+        interpreter.chmod(0o700)
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(root / "local"),
+               "ANSIBLE_REMOTE_TEMP": str(root / "remote")}
+        env.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
+        for identity, expected in ((fifo, 2), (oversized, 2), (self.identity, 0)):
+            with self.subTest(identity=identity.name):
+                book = root / "identity.yml"
+                book.write_text(yaml.safe_dump([{"hosts": "all", "gather_facts": False, "vars": {
+                    "role_path": str(role), "luks_header_escrow_enabled": True,
+                    "ansible_python_interpreter": str(interpreter),
+                    "luks_header_escrow_expected_machine_id": "a" * 32,
+                    "luks_header_escrow_machine_id_path": str(identity)}, "tasks": [check,
+                    {"ansible.builtin.copy": {"dest": str(marker), "content": "passed", "mode": "0600"}}]}]))
+                done = subprocess.run(["ansible-playbook", "-i", "localhost,", "-c", "local", str(book)],
+                                      env=env, capture_output=True, text=True, timeout=15)
+                self.assertEqual(done.returncode, expected, done.stdout + done.stderr)
+                self.assertTrue(selected.exists(), "Role precheck bypassed the configured target interpreter")
+                self.assertEqual(marker.exists(), expected == 0)
+
+    def test_wrong_uuid_is_rejected_before_temporary_capture(self):
+        binary, marker = self.fake_cli("fail")
+        with self.assertRaisesRegex(ValueError, "Wrong source LUKS UUID"):
+            snapshot(**{**self.options, "expected_uuid": "22222222-2222-4333-8444-555555555555"},
+                     cryptsetup_path=binary)
+        self.assertFalse(marker.exists())
+        self.no_raw_scratch()
+
+    def test_regular_file_without_opt_in_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "explicit test opt-in"):
+            snapshot(**{**self.options, "allow_regular_file_device": False})
+        self.no_raw_scratch()
+
+    def test_symlink_source_is_rejected(self):
+        alias = self.root / "alias.img"
+        alias.symlink_to(self.device)
+        with self.assertRaisesRegex(ValueError, "canonical installed device"):
+            snapshot(**{**self.options, "device": str(alias)})
+        self.no_raw_scratch()
+
+    def test_unsafe_or_symlinked_runtime_is_rejected(self):
+        binary, marker = self.fake_cli("fail")
+        self.runtime.chmod(0o777)
+        with self.assertRaises(ValueError):
+            snapshot(**self.options, cryptsetup_path=binary)
+        self.runtime.chmod(0o700)
+        alias = self.root / "runtime-alias"
+        alias.symlink_to(self.runtime)
+        with self.assertRaises(ValueError):
+            snapshot(**{**self.options, "temporary_root": str(alias)}, cryptsetup_path=binary)
+        self.assertFalse(marker.exists())
+        self.no_raw_scratch()
+
+    def test_partial_failure_oversize_permissions_and_hardlinks_are_cleaned(self):
+        for mode in ("fail", "permissions", "hardlink", "oversize"):
+            with self.subTest(mode=mode):
+                binary, marker = self.fake_cli(mode)
+                bound = 1 if mode == "oversize" else 20971520
+                with self.assertRaises(ValueError):
+                    snapshot(**self.options, cryptsetup_path=binary, max_raw_bytes=bound)
+                self.assertTrue(marker.exists())
+                self.no_raw_scratch()
+
+    def test_timeout_kills_only_owned_child_and_cleans_partial_header(self):
+        binary, marker = self.fake_cli("sleep")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            snapshot(**self.options, cryptsetup_path=binary, timeout_seconds=1)
+        self.no_raw_scratch()
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(marker.read_text()), 0)
+
+    def test_managed_process_sigterm_cleans_header_and_reaps_crypto_child(self):
+        binary, marker = self.fake_cli("sleep")
+        options = {**self.options, "cryptsetup_path": binary}
+        program = '''import json,signal,sys
+sys.path.insert(0,sys.argv[1])
+from plugins.module_utils.luks_header_snapshot import SnapshotInterrupted,snapshot
+def interrupted(signum,frame):raise SnapshotInterrupted('test termination')
+signal.signal(signal.SIGTERM,interrupted)
+try:snapshot(**json.load(sys.stdin))
+except SnapshotInterrupted:sys.exit(19)
+'''
+        root = str(Path(__file__).resolve().parents[2])
+        child = subprocess.Popen([sys.executable, "-I", "-S", "-c", program, root],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            child.stdin.write(json.dumps(options).encode())
+            child.stdin.close()
+            for _attempt in range(100):
+                if marker.exists() or child.poll() is not None:
+                    break
+                time.sleep(0.02)
+            self.assertTrue(marker.exists())
+            child.send_signal(signal.SIGTERM)
+            self.assertEqual(child.wait(timeout=10), 19)
+            self.no_raw_scratch()
+            with self.assertRaises(ProcessLookupError):
+                os.kill(int(marker.read_text()), 0)
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.wait()
+            child.stdout.close()
+            child.stderr.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

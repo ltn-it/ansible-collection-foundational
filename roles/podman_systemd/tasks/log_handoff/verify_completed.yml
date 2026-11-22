@@ -1,0 +1,67 @@
+---
+- name: Recheck the retained prefix from the root-owned completed record
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ podman_systemd_h_python.ansible_facts.ansible_python.executable }}'
+      - -c
+      - |
+        import hashlib,pathlib,stat,sys
+        target=pathlib.Path(sys.argv[1]);meta=target.lstat();count=int(sys.argv[2])
+        if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=int(sys.argv[-1]) or meta.st_nlink!=1:
+            raise RuntimeError('UNVERIFIED_DESTINATION')
+        if meta.st_size<count:
+            raise RuntimeError('MISSING_RETAINED_PREFIX')
+        digest=hashlib.sha256()
+        with target.open('rb') as data:
+            while count:
+                chunk=data.read(min(count,1024*1024))
+                if not chunk:
+                    raise RuntimeError('MISSING_RETAINED_BYTES')
+                count-=len(chunk);digest.update(chunk)
+        if digest.hexdigest()!=sys.argv[3]:
+            raise RuntimeError('RETAINED_PREFIX_CHANGED')
+      - '{{ podman_systemd_h_log }}'
+      - '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].preserved_old_bytes }}'
+      - '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].old_sha256 }}'
+      - '{{ podman_systemd_log_handoff_profile.runtime_uid | string }}'
+    chdir: '{{ podman_systemd_h_home }}'
+  changed_when: false
+- name: Recheck the completed replacement identity and destination
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - inspect
+      - '{{ podman_systemd_h_spec.container }}'
+      - --format
+      - >-
+        {{ "{{.Id}} {{.State.Running}} {{.HostConfig.LogConfig.Path}} {{.Config.Labels.PODMAN_SYSTEMD_UNIT}}"
+        }}
+    chdir: '{{ podman_systemd_h_home }}'
+  register: podman_systemd_h_completed_writer
+  changed_when: false
+- name: Require the same verified running replacement before partial cleanup resumes
+  ansible.builtin.assert:
+    that:
+      - >-
+        podman_systemd_h_completed_writer.stdout.split() ==
+        [podman_systemd_h_completed.proofs[podman_systemd_h_name].container_id,
+        'true', podman_systemd_h_log, podman_systemd_h_spec.unit ~ '.service']
+    quiet: true
+- name: Recheck the recorded replacement Pod before continuing partial cleanup
+  ansible.builtin.include_tasks: live_pod.yml
+  vars:
+    podman_systemd_h_pod_container: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].container_id }}'
+    podman_systemd_h_pod_name: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].pod_name }}'
+    podman_systemd_h_pod_expected: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].pod_id }}'
+    podman_systemd_h_infra_expected: '{{ podman_systemd_h_completed.proofs[podman_systemd_h_name].infra_id }}'
+    podman_systemd_h_pod_mode: live
+- name: Restore the immutable completed proof without needing a removed hold
+  ansible.builtin.set_fact:
+    podman_systemd_h_verified: >-
+      {{ podman_systemd_h_verified | combine({podman_systemd_h_name:
+      podman_systemd_h_completed.proofs[podman_systemd_h_name]})
+      }}

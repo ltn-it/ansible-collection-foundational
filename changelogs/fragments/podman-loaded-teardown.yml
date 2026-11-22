@@ -1,0 +1,6 @@
+---
+bugfixes:
+  - >-
+    podman_systemd - inspect actual loaded native command arrays for teardown prerequisites,
+    ignore desired logging and manifest drift when stopping, and defer enablement changes
+    until after a confirmed stop so they cannot implicitly reload a pending definition first.

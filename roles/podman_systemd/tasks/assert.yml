@@ -7,7 +7,9 @@
       - podman_systemd_allowed_actions is not string
       - podman_systemd_unit_name | default('', true) | trim | length > 0
       - podman_systemd_description | default('', true) | trim | length > 0
-      - podman_systemd_manifest_path | default('', true) | trim | length > 0
+      - >-
+        podman_systemd_action in ['stopped', 'absent'] or
+        podman_systemd_manifest_path | default('', true) | trim | length > 0
       - podman_systemd_scope in ['system', 'user']
       - podman_systemd_quadlet_dir | default('', true) | trim | length > 0
       - podman_systemd_quadlet_path | default('', true) | trim | length > 0
@@ -37,4 +39,112 @@
         | list
         | length == 0
     fail_msg: "podman_systemd variables are missing or invalid."
+  tags: always
+
+- name: Validate the optional native log destination
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_log_path is string
+      - >-
+        podman_systemd_log_path == '' or
+        (podman_systemd_log_path is match('^/[A-Za-z0-9_./-]+\Z') and
+         not podman_systemd_log_path.endswith('/') and
+         '..' not in podman_systemd_log_path.split('/') and
+         '.' not in podman_systemd_log_path.split('/') and
+         '//' not in podman_systemd_log_path)
+    fail_msg: >-
+      The native log destination must be an absolute canonical path without
+      unit specifiers or control characters.
+  when: podman_systemd_action not in ['stopped', 'absent']
+  tags: always
+
+- name: Resolve the actual Ansible Python interpreter for native log validation
+  ansible.builtin.setup:
+    gather_subset: ['!all', '!min', python]
+    filter: [ansible_python]
+  register: podman_systemd_log_python
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
+- name: Require trusted directory ancestry for the native log destination
+  ansible.builtin.command:
+    argv:
+      - "{{ podman_systemd_log_python.ansible_facts.ansible_python.executable }}"
+      - -c
+      - |
+        import os,pathlib,stat,sys
+        allowed_owners = {0, os.geteuid()}
+        for directory in reversed(pathlib.Path(sys.argv[1]).parents):
+            info = directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid not in allowed_owners
+                    or stat.S_IMODE(info.st_mode) & 0o022):
+                sys.exit(1)
+        destination = pathlib.Path(sys.argv[1])
+        for definition in sys.argv[2:]:
+            source = pathlib.Path(definition)
+            if destination.resolve() == source.resolve():
+                raise RuntimeError('LOG_DESTINATION_OVERLAPS_DEFINITION')
+            try:
+                same = os.path.samefile(destination, source)
+            except FileNotFoundError:
+                same = False
+            if same:
+                raise RuntimeError('LOG_DESTINATION_OVERLAPS_DEFINITION')
+        print(os.geteuid())
+      - "{{ podman_systemd_log_path }}"
+      - "{{ podman_systemd_manifest_path }}"
+      - "{{ podman_systemd_quadlet_path }}"
+  changed_when: false
+  check_mode: false
+  register: podman_systemd_log_ancestry_check
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
+- name: Validate the supported native log manifest
+  ansible.builtin.import_tasks: native_log_manifest.yml
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
+- name: Inspect the prepared native log destination without following links
+  ansible.builtin.stat:
+    path: "{{ podman_systemd_log_path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: podman_systemd_log_file
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
+- name: Require a prepared unlinked regular native log file
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_log_file.stat.exists
+      - podman_systemd_log_file.stat.isreg | default(false)
+      - not podman_systemd_log_file.stat.islnk | default(false)
+      - podman_systemd_log_file.stat.nlink == 1
+      - podman_systemd_log_file.stat.uid == podman_systemd_log_ancestry_check.stdout | int(-1)
+      - podman_systemd_log_file.stat.mode == '0600'
+    fail_msg: Prepare a runtime-owned mode-0600 single-link native log file and trusted parent directory.
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
+  tags: always
+
+- name: Require effective write access to the prepared native log destination
+  ansible.builtin.command:
+    argv: [/usr/bin/test, -w, "{{ podman_systemd_log_path }}"]
+  changed_when: false
+  check_mode: false
+  when:
+    - podman_systemd_log_path | length > 0
+    - podman_systemd_action not in ['absent', 'stopped']
   tags: always

@@ -1,0 +1,13 @@
+---
+- name: Restore the complete durable plan
+  ansible.builtin.include_tasks: load.yml
+- name: Validate ALL held sources and destinations before stopping ANY application
+  ansible.builtin.include_tasks: copy_guard_one.yml
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item
+- name: Transfer only verified closed native sources in dependency order
+  ansible.builtin.include_tasks: copy_one.yml
+  loop: '{{ podman_systemd_h_names }}'
+  loop_control:
+    loop_var: podman_systemd_h_item

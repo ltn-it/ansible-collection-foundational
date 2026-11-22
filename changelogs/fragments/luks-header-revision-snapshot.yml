@@ -1,0 +1,12 @@
+---
+minor_changes:
+  - >-
+    luks_header_escrow - add an explicitly enabled revision entrypoint that returns
+    exact source UUID, header size and SHA-256 without a wrapping key or raw-header transfer.
+bugfixes:
+  - >-
+    luks_header_escrow - capture and clean raw header scratch in one bounded managed-side
+    snapshot process shared with revision planning; restrict raw scratch to protected tmpfs.
+  - >-
+    luks_header_snapshot - use a non-EINTR termination exception so Python selectors cannot
+    silently retry handled termination, and reap only the owned cryptsetup process group.

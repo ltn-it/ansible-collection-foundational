@@ -80,7 +80,7 @@ class FakeVault:
 
 
 class FakeNative:
-    def __init__(self, cfg, payload):
+    def __init__(self, cfg, payload, creation_id_field="id"):
         self.cfg = cfg
         self.payload = payload
         self.tag_sha256 = custody.digest(payload)
@@ -92,6 +92,7 @@ class FakeNative:
         self.user = "U" * 26
         self.category = "DOCUMENT"
         self.id = "i" * 26
+        self.creation_id_field = creation_id_field
 
     def run(self, argv, payload=b"", limit=1024 * 1024):
         if argv == ["--version"]:
@@ -101,12 +102,16 @@ class FakeNative:
         raise AssertionError("unexpected command")
 
     def metadata(self, argv):
-        if argv[0] == "whoami":
-            return {
-                "account_uuid": self.account,
-                "user_uuid": self.user,
-                "url": "https://example.1password.com",
-            }
+        if argv[:2] == ["account", "list"]:
+            return [
+                {
+                    "account_uuid": self.account,
+                    "user_uuid": self.user,
+                    "url": "example.1password.com",
+                }
+            ]
+        if argv[:3] == ["user", "get", "--me"]:
+            return {"id": self.user}
         if argv[:2] == ["vault", "get"]:
             return {"id": self.cfg["vault_id"]}
         if argv[:2] == ["item", "list"]:
@@ -125,7 +130,7 @@ class FakeNative:
         self.exists = True
         self.payload = payload
         self.tag_sha256 = custody.digest(payload)
-        return {"id": self.id}
+        return {self.creation_id_field: self.id}
 
 
 class CustodyTests(unittest.TestCase):
@@ -196,6 +201,40 @@ class CustodyTests(unittest.TestCase):
                 custody.vault_read_custody(vault, "kv", "headers", wrong)
         with self.assertRaises(ValueError):
             native.onepassword_read_custody(cli, config(), pins)
+
+    def test_native_document_revision_change_cannot_hide_behind_cached_metadata(self):
+        p, cfg = package(), config()
+        raw = custody.validate_package(p)
+        pins = {
+            "package_sha256": custody.digest(raw),
+            **{
+                key: p["manifest"][key]
+                for key in ("subject", "source_machine_id", "luks_uuid")
+            },
+        }
+
+        class CachedRevisionNative(FakeNative):
+            def run(self, argv, payload=b"", limit=1024 * 1024):
+                result = super().run(argv, payload, limit)
+                if argv[:2] == ["document", "get"]:
+                    self.version = 2
+                return result
+
+            def metadata(self, argv):
+                rows = super().metadata(argv)
+                if argv[:2] == ["item", "list"] and "--cache=false" not in argv:
+                    return [{**row, "version": 1} for row in rows]
+                return rows
+
+        for operation in ("verify", "independent_read"):
+            cli = CachedRevisionNative(cfg, raw)
+            cli.exists = True
+            pinned = dict(cfg, item_id=cli.id, item_version=1)
+            with self.subTest(operation=operation), self.assertRaises(ValueError):
+                if operation == "verify":
+                    native.onepassword_custody(cli, pinned, p)
+                else:
+                    native.onepassword_read_custody(cli, pinned, pins)
 
     def test_authenticated_package_export_and_password_free_import(self):
         fixture = reader_tests.HeaderReaderTests()
@@ -304,6 +343,26 @@ class CustodyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.read("kv", "headers")
 
+    def test_vault_accepts_only_actual_empty_204_not_empty_200_or_204_body(self):
+        client = custody.VaultHTTP.__new__(custody.VaultHTTP)
+        client.url = "https://vault.fixture.invalid"
+        client.namespace = ""
+        client.token = "SYNTHETIC-fixture-token"
+        client.context = None
+        client.timeout = 10
+        with patch.object(custody.urllib.request, "build_opener") as build:
+            response = build.return_value.open.return_value.__enter__.return_value
+            response.status = 204
+            response.read.return_value = b""
+            self.assertEqual(client.request("POST", "auth/token/revoke-self"), {})
+            response.status = 200
+            with self.assertRaises(ValueError):
+                client.request("POST", "auth/token/revoke-self")
+            response.status = 204
+            response.read.return_value = b"{}"
+            with self.assertRaises(ValueError):
+                client.request("POST", "auth/token/revoke-self")
+
     def test_package_rejects_wrong_schema_payload_and_plaintext(self):
         for key, value in [
             ("schema_version", True),
@@ -404,57 +463,42 @@ class CustodyTests(unittest.TestCase):
         self.assertEqual(cli.created, 0)
 
     def test_native_signed_create_readback_repeat_and_replay(self):
-        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
-            root = Path(directory)
-            cfg, p = config(), package()
-            raw = custody.validate_package(p)
-            cli = FakeNative(cfg, raw)
-            authority = build_authority(root)
-            approval, replay, _ = build_approval(
-                root,
-                authority,
-                "create-onepassword-header-document",
-                p["manifest"]["subject"],
-                {
-                    "config": cfg,
-                    "package_sha256": custody.digest(raw),
-                    "allow_create": True,
-                },
-            )
-            # The fixture binds the same canonical replay directory as the authority.
-            authority["replay_directory"] = str(replay)
-            from tests.unit.plugins.action.onepassword_approval_support import (
-                sign_approval,
-            )
+        for creation_id_field in ("id", "uuid"):
+            with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+                root = Path(directory)
+                cfg, p = config(), package()
+                raw = custody.validate_package(p)
+                cli = FakeNative(cfg, raw, creation_id_field=creation_id_field)
+                authority = build_authority(root)
+                approval, replay, _ = build_approval(
+                    root,
+                    authority,
+                    "create-onepassword-header-document",
+                    p["manifest"]["subject"],
+                    {
+                        "config": cfg,
+                        "package_sha256": custody.digest(raw),
+                        "allow_create": True,
+                    },
+                )
+                # The fixture binds the same canonical replay directory as the authority.
+                authority["replay_directory"] = str(replay)
+                from tests.unit.plugins.action.onepassword_approval_support import (
+                    sign_approval,
+                )
 
-            approval = sign_approval(
-                approval,
-                authority,
-                "create-onepassword-header-document",
-                p["manifest"]["subject"],
-                {
-                    "config": cfg,
-                    "package_sha256": custody.digest(raw),
-                    "allow_create": True,
-                },
-            )
-            result = native.onepassword_custody(
-                cli,
-                cfg,
-                p,
-                "apply",
-                allow_create=True,
-                approval=approval,
-                authority=authority,
-            )
-            self.assertTrue(result["verified"])
-            self.assertEqual(cli.created, 1)
-            self.assertFalse(
-                native.onepassword_custody(cli, cfg, p, "apply")["changed"]
-            )
-            cli.exists = False
-            with self.assertRaises(AnsibleActionFail):
-                native.onepassword_custody(
+                approval = sign_approval(
+                    approval,
+                    authority,
+                    "create-onepassword-header-document",
+                    p["manifest"]["subject"],
+                    {
+                        "config": cfg,
+                        "package_sha256": custody.digest(raw),
+                        "allow_create": True,
+                    },
+                )
+                result = native.onepassword_custody(
                     cli,
                     cfg,
                     p,
@@ -463,7 +507,42 @@ class CustodyTests(unittest.TestCase):
                     approval=approval,
                     authority=authority,
                 )
-            self.assertEqual(cli.created, 1)
+                self.assertTrue(result["verified"])
+                self.assertEqual(cli.created, 1)
+                self.assertFalse(
+                    native.onepassword_custody(cli, cfg, p, "apply")["changed"]
+                )
+                cli.exists = False
+                with self.assertRaises(AnsibleActionFail):
+                    native.onepassword_custody(
+                        cli,
+                        cfg,
+                        p,
+                        "apply",
+                        allow_create=True,
+                        approval=approval,
+                        authority=authority,
+                    )
+                self.assertEqual(cli.created, 1)
+
+    def test_native_creation_response_aliases_reject_invalid_or_ambiguous_ids(self):
+        expected = "i" * 26
+        self.assertEqual(native._created_document_id({"id": expected}), expected)
+        self.assertEqual(native._created_document_id({"uuid": expected}), expected)
+        self.assertEqual(
+            native._created_document_id({"id": expected, "uuid": expected}), expected
+        )
+        for value in (
+            None,
+            [],
+            {},
+            {"uuid": True},
+            {"uuid": "bad"},
+            {"id": expected, "uuid": "j" * 26},
+            {"id": expected, "uuid": None},
+        ):
+            with self.subTest(response=value), self.assertRaises(ValueError):
+                native._created_document_id(value)
 
     def test_native_identity_duplicate_revision_and_payload_rejected(self):
         cfg = config()
@@ -532,6 +611,131 @@ class CustodyTests(unittest.TestCase):
             binary.write_text("#!/usr/bin/python3\nraise SystemExit(0)\n")
             with self.assertRaises(AnsibleActionFail):
                 cli.run([])
+
+    def test_native_cli_preserves_approved_desktop_authentication_session(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text("#!/usr/bin/python3\nimport os\nprint(os.getsid(0))\n")
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            self.assertEqual(int(native.NativeCLI(cfg).run([])), os.getsid(0))
+
+    def test_large_document_transfers_can_complete_after_metadata_deadline(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport sys\n"
+                "sys.stdin.buffer.read()\nprint('ciphertext-received')\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            cli = native.NativeCLI(cfg)
+            cases = [
+                (["document", "create", "-"], b"x" * (1024 * 1024 + 1), 1024),
+                (["document", "get", "fixture"], b"", custody.MAX_PACKAGE),
+            ]
+            for arguments, payload, limit in cases:
+                # An actual subprocess must finish across the old 60s boundary;
+                # only the monotonic clock advances, avoiding a minute-long test.
+                clock = iter([0] + [61] * 10000)
+                with self.subTest(command=arguments[:2]), patch.object(
+                    native.time, "monotonic", side_effect=lambda: next(clock)
+                ):
+                    self.assertEqual(
+                        cli.run(arguments, payload=payload, limit=limit).strip(),
+                        b"ciphertext-received",
+                    )
+
+    def test_metadata_and_expired_document_calls_still_retire_owned_process(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport sys\nsys.stdin.buffer.read()\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            cli = native.NativeCLI(cfg)
+            real_popen = native.subprocess.Popen
+            cases = [
+                (["item", "get", "fixture"], b"", custody.MAX_PACKAGE, 61),
+                (["document", "get", "fixture"], b"", 1024, 61),
+                (["document", "create", "-"], b"x" * (1024 * 1024 + 1), 1024, 601),
+                (["document", "get", "fixture"], b"", custody.MAX_PACKAGE, 601),
+            ]
+            for arguments, payload, limit, elapsed in cases:
+                processes = []
+
+                def start(*args, **kwargs):
+                    process = real_popen(*args, **kwargs)
+                    processes.append(process)
+                    return process
+
+                clock = iter([0] + [elapsed] * 10000)
+                with self.subTest(command=arguments[:2], elapsed=elapsed), patch.object(
+                    native.subprocess, "Popen", side_effect=start
+                ), patch.object(
+                    native.time, "monotonic", side_effect=lambda: next(clock)
+                ), self.assertRaisesRegex(
+                    ValueError, "timed out"
+                ):
+                    cli.run(arguments, payload=payload, limit=limit)
+                self.assertEqual(len(processes), 1)
+                self.assertIsNotNone(processes[0].poll())
+                self.assertTrue(processes[0].stdin.closed)
+                self.assertTrue(processes[0].stdout.closed)
+
+    def test_native_cli_forces_desktop_mode_in_the_actual_child(self):
+        with tempfile.TemporaryDirectory(dir=os.environ["HOME"]) as directory:
+            binary = Path(directory) / "fixture-cli"
+            binary.write_text(
+                "#!/usr/bin/python3\nimport os\nprint(os.environ['OP_BIOMETRIC_UNLOCK_ENABLED'])\n"
+            )
+            binary.chmod(0o700)
+            cfg = config()
+            cfg.update(
+                cli_path=str(binary),
+                cli_sha256=custody.digest(binary.read_bytes()),
+                executor_uid=os.geteuid(),
+                executor_node=platform.node(),
+            )
+            for inherited in ("false", "true", "unexpected"):
+                with patch.dict(os.environ, {"OP_BIOMETRIC_UNLOCK_ENABLED": inherited}):
+                    cli = native.NativeCLI(cfg)
+                    self.assertEqual(cli.run([]).strip(), b"true")
+                    self.assertNotIn("UNRELATED", cli.env)
+                    from plugins.module_utils import onepassword_secret_item as creator
+
+                    client = creator._OnePasswordCLI(
+                        str(binary),
+                        custody.digest(binary.read_bytes()),
+                        cfg["account_id"],
+                    )
+                    self.assertEqual(
+                        client._run([], "synthetic backend selection").strip(), b"true"
+                    )
+                    self.assertEqual(
+                        set(client.environment)
+                        - {"HOME", "PATH", "TMPDIR", "LANG", "LC_ALL"},
+                        {"OP_BIOMETRIC_UNLOCK_ENABLED"},
+                    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,50 @@
+---
+- name: Recheck the current source and holding file before adopting or creating a hold
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - '{{ podman_systemd_h_saved[podman_systemd_h_name].log }}'
+    - '{{ podman_systemd_h_stage }}/held.log'
+    - '{{ podman_systemd_h_stage }}'
+  register: podman_systemd_h_hold_stats
+- name: Require exactly the recorded source and holding directory identities
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_hold_stats.results[0].stat.isreg
+      - not podman_systemd_h_hold_stats.results[0].stat.islnk
+      - >-
+        podman_systemd_h_hold_stats.results[0].stat.uid == podman_systemd_log_handoff_profile.runtime_uid
+      - >-
+        podman_systemd_h_hold_stats.results[0].stat.inode == podman_systemd_h_saved[podman_systemd_h_name].source_inode
+      - >-
+        podman_systemd_h_hold_stats.results[0].stat.dev == podman_systemd_h_saved[podman_systemd_h_name].source_dev
+      - podman_systemd_h_hold_stats.results[0].stat.nlink in [1, 2]
+      - podman_systemd_h_hold_stats.results[2].stat.isdir
+      - not podman_systemd_h_hold_stats.results[2].stat.islnk
+      - >-
+        podman_systemd_h_hold_stats.results[2].stat.uid == podman_systemd_log_handoff_profile.runtime_uid
+      - podman_systemd_h_hold_stats.results[2].stat.mode == '0700'
+      - >-
+        podman_systemd_h_hold_stats.results[2].stat.inode == podman_systemd_h_saved[podman_systemd_h_name].stage_inode
+      - >-
+        not podman_systemd_h_hold_stats.results[1].stat.exists or (podman_systemd_h_hold_stats.results[1].stat.isreg
+        and not podman_systemd_h_hold_stats.results[1].stat.islnk and podman_systemd_h_hold_stats.results[1].stat.inode
+        == podman_systemd_h_saved[podman_systemd_h_name].source_inode and
+        podman_systemd_h_hold_stats.results[1].stat.dev
+        == podman_systemd_h_saved[podman_systemd_h_name].source_dev and podman_systemd_h_hold_stats.results[1].stat.uid
+        == podman_systemd_log_handoff_profile.runtime_uid and podman_systemd_h_hold_stats.results[1].stat.nlink
+        == 2)
+    quiet: true
+- name: Retain the exact live source with a standard same-filesystem hardlink
+  become: true
+  become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+  ansible.builtin.file:
+    src: '{{ podman_systemd_h_saved[podman_systemd_h_name].log }}'
+    dest: '{{ podman_systemd_h_stage }}/held.log'
+    state: hard
+    mode: '{{ podman_systemd_h_hold_stats.results[0].stat.mode }}'

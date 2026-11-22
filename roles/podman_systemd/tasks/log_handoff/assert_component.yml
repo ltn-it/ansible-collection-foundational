@@ -1,0 +1,36 @@
+---
+- name: Validate an individual rootless application handoff
+  ansible.builtin.assert:
+    that:
+      - podman_systemd_h_item is string
+      - podman_systemd_h_item is match('^[a-z][a-z0-9-]{0,39}\Z')
+      - podman_systemd_h_component is mapping
+      - >-
+        podman_systemd_h_component.keys() | list | sort == ['container', 'destination', 'manifest', 'manifest_sha256',
+        'quadlet', 'unit']
+      - podman_systemd_h_component.container is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*\Z')
+      - podman_systemd_h_component.unit is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*\Z')
+      - podman_systemd_h_component.manifest_sha256 is match('^[0-9a-f]{64}\Z')
+      - podman_systemd_h_component.manifest is match('^/[A-Za-z0-9_./-]+\Z')
+      - podman_systemd_h_component.destination is match('^/[A-Za-z0-9_./-]+\Z')
+      - >-
+        podman_systemd_h_component.quadlet == podman_systemd_h_home ~ '/.config/containers/systemd/' ~
+        podman_systemd_h_component.unit
+        ~ '.kube'
+      - podman_systemd_h_component.manifest != podman_systemd_h_component.destination
+      - podman_systemd_h_component.quadlet != podman_systemd_h_component.destination
+      - >-
+        not podman_systemd_h_component.destination.startswith(podman_systemd_log_handoff_profile.graphroot ~
+        '/')
+      - >-
+        podman_systemd_log_handoff_profile.components.values() | map(attribute='container') | unique | length
+        == podman_systemd_log_handoff_stop_order | length
+      - >-
+        podman_systemd_log_handoff_profile.components.values() | map(attribute='unit') | unique | length ==
+        podman_systemd_log_handoff_stop_order | length
+      - >-
+        podman_systemd_log_handoff_profile.components.values() | map(attribute='destination') | unique | length
+        == podman_systemd_log_handoff_stop_order | length
+    quiet: true
+  vars:
+    podman_systemd_h_component: '{{ podman_systemd_log_handoff_profile.components[podman_systemd_h_item] }}'

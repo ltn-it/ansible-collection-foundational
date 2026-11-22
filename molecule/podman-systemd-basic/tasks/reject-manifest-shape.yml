@@ -1,0 +1,36 @@
+---
+- name: Reject malformed manifest fields before touching the existing service
+  block:
+    - name: Attempt an invalid replacement for the existing native-log unit
+      ansible.builtin.include_role:
+        name: lit.foundational.podman_systemd
+      vars:
+        podman_systemd_action: present
+        podman_systemd_unit_name: podman-systemd-basic
+        podman_systemd_manifest_path: "{{ podman_systemd_test_root }}/{{ podman_systemd_test_manifest_case }}.yml"
+        podman_systemd_quadlet_dir: "{{ podman_systemd_test_quadlet_dir }}"
+        podman_systemd_scope: user
+        podman_systemd_log_path: "{{ podman_systemd_test_native_log_root }}/application.log"
+    - name: Fail if malformed container fields were accepted
+      ansible.builtin.fail:
+        msg: Malformed container fields were accepted.
+  rescue:
+    - name: Require the manifest-shape fence to reject the replacement
+      ansible.builtin.assert:
+        that: ansible_failed_task.name == 'Require exactly one Pod application container without initializers'
+    - name: Inspect the existing unit and service calls after rejection
+      ansible.builtin.stat:
+        path: "{{ item.item }}"
+        checksum_algorithm: sha256
+      loop: "{{ podman_systemd_test_before_malformed.results }}"
+      register: podman_systemd_test_after_malformed
+    - name: Require the existing unit and service calls to be unchanged
+      ansible.builtin.assert:
+        that: >-
+          podman_systemd_test_after_malformed.results | map(attribute='stat.checksum') | list ==
+          podman_systemd_test_before_malformed.results | map(attribute='stat.checksum') | list
+    - name: Record the malformed-field rejection
+      ansible.builtin.copy:
+        dest: "{{ podman_systemd_test_root }}/{{ podman_systemd_test_manifest_case }}-shape-rejected"
+        content: "rejected\n"
+        mode: "0600"

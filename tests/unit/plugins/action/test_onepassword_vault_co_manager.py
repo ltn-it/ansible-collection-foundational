@@ -82,12 +82,11 @@ class _FakeClient:
 
     def metadata(self, arguments, operation):
         self.calls.append((list(arguments), operation, False))
-        if arguments[0] == "whoami":
-            return {
-                "account_uuid": ACCOUNT_ID,
-                "url": "https://example.1password.com",
-                "user_uuid": OPERATOR_UUID,
-            }
+        if arguments[:2] == ["account", "list"]:
+            return [{"account_uuid": ACCOUNT_ID, "url": "example.1password.com",
+                     "user_uuid": OPERATOR_UUID}]
+        if arguments[:3] == ["user", "get", "--me"]:
+            return {"id": OPERATOR_UUID}
         if arguments[:2] == ["vault", "get"]:
             return {"id": VAULT_ID}
         if arguments[:2] == ["user", "get"]:

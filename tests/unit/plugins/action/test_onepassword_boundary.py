@@ -70,7 +70,7 @@ def test_trusted_executable_rejects_mutable_parent_and_hard_link(tmp_path):
 
 
 def test_agent_socket_resolves_official_style_alias_with_spaces(tmp_path):
-    with tempfile.TemporaryDirectory(prefix="op socket ", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="op socket ", dir=os.environ["HOME"]) as root:
         canonical_parent = Path(root)
         canonical_parent.chmod(0o700)
         socket_path = canonical_parent / "agent.sock"

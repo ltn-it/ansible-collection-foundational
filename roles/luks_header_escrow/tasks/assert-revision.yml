@@ -1,0 +1,26 @@
+---
+- name: Require exact source and bounded revision planning inputs
+  ansible.builtin.assert:
+    that:
+      - luks_header_escrow_subject is string
+      - luks_header_escrow_subject is match('^[a-z0-9][a-z0-9.-]{0,252}$')
+      - luks_header_escrow_expected_machine_id is match('^[0-9a-f]{32}$')
+      - luks_header_escrow_expected_uuid is match('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
+      - luks_header_escrow_max_raw_bytes | type_debug == 'int'
+      - luks_header_escrow_max_raw_bytes > 0
+      - luks_header_escrow_max_raw_bytes <= _luks_header_escrow_safe_raw_max_bytes
+      - luks_header_escrow_timeout_seconds | type_debug == 'int'
+      - luks_header_escrow_timeout_seconds >= 1
+      - luks_header_escrow_timeout_seconds <= 60
+      - luks_header_escrow_allow_regular_file_device is boolean
+      - luks_header_escrow_machine_id_path is match('^/')
+      - luks_header_escrow_crypttab_path is match('^/')
+      - luks_header_escrow_awk_path is match('^/')
+      - luks_header_escrow_findfs_path is match('^/')
+      - luks_header_escrow_readlink_path is match('^/')
+      - luks_header_escrow_id_path is match('^/')
+      - luks_header_escrow_cryptsetup_path is match('^/')
+      - luks_header_escrow_remote_temporary_root is match('^/')
+      - not ansible_check_mode
+    quiet: true
+    fail_msg: Revision planning requires an exact source identity and bounded managed-side inputs.

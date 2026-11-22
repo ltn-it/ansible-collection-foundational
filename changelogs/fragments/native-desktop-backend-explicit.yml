@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - >-
+    Native header custody and Password-item clients now explicitly select desktop CLI integration
+    and reject session-token backends as before.

@@ -1,0 +1,83 @@
+---
+- name: Finalize only retained sources after all selected independent verifications
+  block:
+    - name: Require the entire source set to be verified before removing any hold
+      ansible.builtin.assert:
+        that: podman_systemd_h_verified | length == podman_systemd_h_names | length
+        quiet: true
+    - name: Commit the full byte and replacement proof before removing any source
+      ansible.builtin.copy:
+        dest: '{{ podman_systemd_h_state_dir }}/completed.json'
+        owner: root
+        group: root
+        mode: '0600'
+        content: >-
+          {{ {'version': 2, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
+          'proofs': podman_systemd_h_verified, 'holds_removed': false} | to_nice_json }}
+      when: not podman_systemd_h_completed_stat.stat.exists
+    - name: Inspect only original retained directories selected for finalization
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+      ansible.builtin.stat:
+        path: >-
+          {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}
+        follow: false
+      loop: '{{ podman_systemd_h_names }}'
+      register: podman_systemd_h_cleanup_directories
+    - name: Reject replacement directories before deleting any retained file
+      ansible.builtin.assert:
+        that:
+          - >-
+            not item.stat.exists or (item.stat.isdir and not item.stat.islnk and item.stat.uid ==
+            podman_systemd_log_handoff_profile.runtime_uid
+            and item.stat.mode == '0700' and item.stat.inode == podman_systemd_h_saved[item.item].stage_inode)
+        quiet: true
+      loop: '{{ podman_systemd_h_cleanup_directories.results }}'
+    - name: Inspect only the retained source file in each original directory
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+      ansible.builtin.stat:
+        path: >-
+          {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}/held.log
+        follow: false
+      loop: '{{ podman_systemd_h_names }}'
+      register: podman_systemd_h_cleanup_files
+    - name: Reject replaced retained sources before unlinking any file
+      ansible.builtin.assert:
+        that:
+          - >-
+            not item.stat.exists or (item.stat.isreg and not item.stat.islnk and item.stat.uid ==
+            podman_systemd_log_handoff_profile.runtime_uid
+            and item.stat.nlink == 1 and item.stat.inode == podman_systemd_h_saved[item.item].source_inode and
+            item.stat.dev == podman_systemd_h_saved[item.item].source_dev)
+        quiet: true
+      loop: '{{ podman_systemd_h_cleanup_files.results }}'
+    - name: Unlink only the known retained source
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+      ansible.builtin.file:
+        path: >-
+          {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item }}/held.log
+        state: absent
+      loop: '{{ podman_systemd_h_names }}'
+    - name: Remove only now-empty original retained directories
+      become: true
+      become_user: '{{ podman_systemd_log_handoff_profile.runtime_user }}'
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/rmdir
+          - >-
+            {{ podman_systemd_h_graph }}/.lit-log-handoff-{{ podman_systemd_log_handoff_operation }}-{{ item.item
+            }}
+      loop: '{{ podman_systemd_h_cleanup_directories.results }}'
+      when: item.stat.exists
+      changed_when: true
+    - name: Record completion only after every requested hold has been removed
+      ansible.builtin.copy:
+        dest: '{{ podman_systemd_h_state_dir }}/completed.json'
+        owner: root
+        group: root
+        mode: '0600'
+        content: >-
+          {{ {'version': 2, 'profile_sha256': podman_systemd_h_journal.profile_sha256, 'names': podman_systemd_h_names,
+          'proofs': podman_systemd_h_verified, 'holds_removed': true} | to_nice_json }}
